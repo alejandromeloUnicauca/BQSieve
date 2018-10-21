@@ -1,0 +1,40 @@
+#include <gmp.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <signal.h>
+
+int terminated;
+void terminar(int sig);
+
+int main(int argc, char * argv[]){	
+	terminated=1;
+	mpz_t cont;//declaracion de variable
+	mpz_init(cont);//instancia de variable
+	mpz_set_ui(cont,1);
+	signal(SIGTERM,terminar);
+	while(terminar){
+		int bd = 0;
+		mpz_out_str(stdout,10,cont);
+		bd = mpz_probab_prime_p(cont,10);
+		if(bd==2){
+			FILE * file = fopen("primes.txt","a");
+			mpz_out_str(file,10,cont);
+			fclose(file);
+			//mpz_out_str(stdout,10,mp);
+			//printf(" is prime\n");
+		}else if(bd==1){
+			FILE * file = fopen("primes.txt","a");
+			mpz_out_str(file,10,cont);
+			fclose(file);
+			//mpz_out_str(stdout,10,mp);
+			//printf(" is probably prime\n");
+		}
+		mpz_sub_ui(cont,cont,2);
+	}
+	mpz_clear(cont);
+	return 1;
+}
+
+void terminar(int sig){
+	terminated = 0;
+}

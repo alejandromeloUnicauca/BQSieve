@@ -1,0 +1,119 @@
+#include <stdio.h>
+#include <gmp.h>
+#include <mpfr.h>
+#include <stdlib.h>
+#include <string.h>
+
+
+long longitudBase(mpfr_t n);
+void intervaloBase(mpfr_t n, mpz_t result);
+long calcularResiduos(mpz_t n, long longitud);
+
+int main(int argc, char * argv[]){	
+	mpz_t n;//declaracion de variable
+	mpz_init(n);//instancia de variable
+	mpz_t intervalo;
+	if(argc != 2){
+		fprintf(stderr,"Parametros no validos\n");
+		fprintf(stderr,"Debe especificar el numero que se va factorizar");
+		exit(EXIT_FAILURE);
+	}
+	mpz_init_set_str(n, argv[1], 10);
+	//mpz_out_str(stdout,10,n);
+	mpfr_t num;
+	mpfr_init(num);
+	mpfr_set_str(num, argv[1], 10, MPFR_RNDU);
+	long longitud = longitudBase(num);
+	mpfr_set_str(num, argv[1], 10, MPFR_RNDU);
+	intervaloBase(num,intervalo);
+	mpfr_clear(num);
+	printf("Longitud de la base: %d\n",longitud);
+	printf("intervalo de la base: ");
+	mpz_out_str(stdout,10,intervalo);
+	printf("\n");
+	printf("Generando residuos cuadraticos...\n");
+	long residuos = calcularResiduos(n,longitud);
+	printf("%d residuos generados en residuos.txt\n",residuos);
+	exit(EXIT_SUCCESS);
+}
+
+long calcularResiduos(mpz_t n, long longitud){
+	long cont = 0;
+	mpz_t result, mod, exp;
+	mpz_init(result);
+	mpz_init(mod);
+	mpz_init(exp);
+	FILE * file;
+	if ((file = fopen("primes.txt", "r")) != NULL) // open file
+	{
+		char buf[BUFSIZ];
+		while(!feof(file)){
+			memset(buf, 0, BUFSIZ);
+			fgets(buf,BUFSIZ,file);
+			mpz_init_set_str(mod, buf, 10);
+			mpz_init_set_str(exp, buf, 10);
+			mpz_sub_ui(exp,exp,1);
+			mpz_divexact_ui(exp,exp,2);
+			mpz_powm(result,n,exp,mod);
+			if((mpz_cmp_si(result,1)==0)){
+				cont++;
+			}
+			if(cont == longitud)
+				break;
+			buf[strlen(buf)-1] = '\0';
+			printf("%s:",buf);
+			mpz_out_str(stdout,10,result);
+			printf("\n");
+		}
+	}else{
+		fprintf(stderr,"Falta archivo primes.txt");
+		exit(EXIT_FAILURE);
+	}
+	mpz_clear(result);
+	mpz_clear(exp);
+	mpz_clear(mod);
+	return cont;
+}
+
+long longitudBase(mpfr_t n){
+	mpfr_t ln1, ln2,e,pow;//variables
+	mpfr_init(ln1);
+	mpfr_init(ln2);
+	mpfr_init(e);
+	mpfr_init(pow);
+	mpfr_set_str(e, "2.71828182845904523536", 10, MPFR_RNDZ);//define euler
+	mpfr_set_str(pow, "0.3535533905932738", 10, MPFR_RNDZ);//define sqrt(2)/4
+	mpfr_log(ln1, n, MPFR_RNDZ);
+	mpfr_log(ln2, ln1,MPFR_RNDZ);
+	mpfr_mul(n, ln1, ln2, MPFR_RNDZ);
+	mpfr_sqrt(n, n, MPFR_RNDZ);
+	mpfr_pow (n, e, n, MPFR_RNDZ);
+	mpfr_pow (n, n, pow, MPFR_RNDZ);
+	long result = mpfr_get_si(n, MPFR_RNDZ);
+	mpfr_clear(ln1);
+	mpfr_clear(ln2);
+	mpfr_clear(e);
+	return result;
+}
+
+void intervaloBase(mpfr_t n, mpz_t result){
+	mpfr_t ln1, ln2,e,pow;
+	mpfr_init(ln1);
+	mpfr_init(ln2);
+	mpfr_init(e);
+	mpfr_init(pow);
+	mpfr_set_str(e, "2.71828182845904523536", 10, MPFR_RNDZ);//define euler
+	mpfr_set_str(pow, "0.3535533905932738", 10, MPFR_RNDZ);//define sqrt(2)/4
+	mpfr_log(ln1, n, MPFR_RNDZ);
+	mpfr_log(ln2, ln1,MPFR_RNDZ);
+	mpfr_mul(n, ln1, ln2, MPFR_RNDZ);
+	mpfr_sqrt(n, n, MPFR_RNDZ);
+	mpfr_pow (n, e, n, MPFR_RNDZ);
+	mpfr_pow (n, n, pow, MPFR_RNDZ);
+	mpfr_pow_si(n, n, 3, MPFR_RNDZ);
+	//mpfr_out_str(stdout, 10, 0, n, MPFR_RNDZ);
+	mpfr_get_z(result, n, MPFR_RNDZ);//se le asigna a result la parte entera de n
+	mpfr_clear(ln1);
+	mpfr_clear(ln2);
+	mpfr_clear(e);
+}

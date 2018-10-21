@@ -1,0 +1,59 @@
+#include <gmp.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <signal.h>
+#include <string.h>
+
+int terminated;
+void terminar(int sig);
+
+int main(int argc, char * argv[]){	
+	terminated=1;
+	mpz_t cont;//declaracion de variable
+	mpz_init(cont);//instancia de variable
+	signal(2,terminar);//recibe la señal de terminar
+	FILE * file;
+	if ((file = fopen("ultimo.txt", "r")) != NULL) // open file
+	{
+		char buf[BUFSIZ];
+		if(!feof(file)){
+			memset(buf, 0, BUFSIZ);
+			fgets(buf,BUFSIZ,file);
+			if(mpz_init_set_str(cont,buf,10)==-1){//asigna el ultimo valor que se analizo
+				mpz_set_ui(cont,1);//se inicia el contador en 1 si no hay un valor valido en el archivo
+			}
+		}
+	}else{
+		mpz_set_ui(cont,1);//se inicia el contador en 1 si no existe el archivo
+	}
+	while(terminated){
+		int bd = 0;
+		//mpz_out_str(stdout,10,cont);
+		bd = mpz_probab_prime_p(cont,10);
+		if(bd==2){
+			FILE * file = fopen("primes.txt","a");
+			mpz_out_str(file,10,cont);
+			fprintf(file,"\n");
+			fclose(file);
+			//mpz_out_str(stdout,10,mp);
+			//printf(" is prime\n");
+		}else if(bd==1){
+			FILE * file = fopen("primes.txt","a");
+			mpz_out_str(file,10,cont);
+			fprintf(file,"\n");
+			fclose(file);
+			//mpz_out_str(stdout,10,mp);
+			//printf(" is probably prime\n");
+		}
+		mpz_add_ui(cont,cont,2);
+	}
+	FILE * fileUltimo = fopen("ultimo.txt","w");
+	mpz_out_str(fileUltimo,10,cont);
+	fclose(fileUltimo);
+	mpz_clear(cont);
+	return 1;
+}
+
+void terminar(int sig){
+	terminated = 0;
+}

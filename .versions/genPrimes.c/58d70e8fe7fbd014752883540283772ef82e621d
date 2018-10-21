@@ -1,0 +1,24 @@
+#include <gmp.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+
+int main(int argc, char * argv[]){	
+	mpz_t mp;//declaracion de variable
+	mpz_init(mp);//instancia de variable
+	for (int i = 3; i < 100000; i=i+2)
+	{
+		mpz_set_ui(mp,i);
+		int bd = 0;
+		bd = mpz_probab_prime_p(mp,10);
+		if(bd==2){
+			mpz_out_str(stdout,10,mp);
+			printf(" is prime\n");
+		}else if(bd==1){
+			mpz_out_str(stdout,10,mp);
+			printf(" is probably prime\n");
+		}
+	}
+	mpz_clear(mp);
+	return 1;
+}

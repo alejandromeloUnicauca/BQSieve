@@ -1,0 +1,273 @@
+/**
+ * @file 
+ * @author Jhon Alejandro Melo <alejandromelo@unicauca.edu.co>
+ * 			Juan Manuel Campo <>
+ * @copyright GNU Public License. 
+ *
+ * @brief Implementacion del algoritmo Quadratic Sieve
+ */
+
+#include <stdio.h>
+#include <time.h>
+#include <gmp.h>
+#include <mpfr.h>
+#include <stdlib.h>
+#include <string.h>
+
+void longitudBase(mpfr_t n, mpz_t result);
+void intervaloBase(mpfr_t n, mpz_t result);
+void calcularResiduos(mpz_t n, mpz_t longitud, mpz_t residuos);
+void polinomioFermat(mpz_t n, mpz_t intervalo);
+int validarResultado(mpz_t result);
+
+int main(int argc, char * argv[]){	
+	clock_t t_inicio, t_final;
+	double segundos = 0;
+	mpz_t n;//declaracion de variable
+	mpz_init(n);//instancia de variable
+	mpz_t intervaloB;
+	mpz_init(intervaloB);
+	mpz_t longitudB;
+	mpz_init(longitudB);
+	if(argc != 2){
+		fprintf(stderr,"Parametros no validos\n");
+		fprintf(stderr,"Debe especificar el numero que se va factorizar");
+		exit(EXIT_FAILURE);
+	}
+	
+	printf("Numero de digitos: %d\n",strlen(argv[1]));
+	mpz_init_set_str(n, argv[1], 10);
+	//mpz_out_str(stdout,10,n);
+	mpfr_t num;
+	mpfr_init(num);
+	
+	//longitud de la base
+	mpfr_set_str(num, argv[1], 10, MPFR_RNDU);
+	longitudBase(num,longitudB);
+	printf("Longitud de la base:");
+	mpz_out_str(stdout,10,longitudB);
+	printf("\n");
+	
+	//intervalo de la base
+	mpfr_set_str(num, argv[1], 10, MPFR_RNDU);
+	intervaloBase(num,intervaloB);
+	mpfr_clear(num);
+	printf("intervalo del polinomio: ");
+	mpz_out_str(stdout,10,intervaloB);
+	printf("\n");
+	
+	t_inicio = clock();
+	//generar residuos
+	printf("Generando residuos cuadraticos...\n");
+	mpz_t residuos;
+	calcularResiduos(n,longitudB,residuos);
+	mpz_out_str(stdout,10,residuos);
+	printf(" residuos generados en residuos.txt\n");
+	t_final = clock();
+	segundos = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;
+	printf("tiempo de calculo de residuos:%fs\n",segundos);
+	//Calcular polinomio de Fermat
+	t_inicio = clock();
+	printf("Calculando polinomio de Fermat\n");
+	polinomioFermat(n,intervaloB);
+	t_final = clock();
+	segundos = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;
+	printf("tiempo de calculo del polinomio:%fs\n",segundos);
+	exit(EXIT_SUCCESS);
+}
+
+
+/**
+ * @brief calcula los residuos cuadraticos del numero n que se obtienen
+ * del archivo primes.txt y los almacena en un archivo residuos.txt 
+ * @param n: numero que se le evaluaran los residuos cuadraticos
+ * @param longitud: numero de residuos que se requieren para el numero n
+ * @param residuos: contador que se utiliza para devolver el numero de 
+ * residuos encontrados
+ */
+void calcularResiduos(mpz_t n, mpz_t longitud, mpz_t residuos){
+	mpz_init(residuos);//contador de residuos encontrados
+	mpz_set_ui(residuos,0);
+	mpz_t result, mod, exp;
+	mpz_init(result);
+	mpz_init(mod);
+	mpz_init(exp);
+	FILE * file;
+	FILE * fr;
+	fr = fopen("residuos.txt","w");
+	fclose(fr);
+	mpz_t contn;//contador de numeros utilizados en la base primes.txt
+	mpz_init(contn);
+	mpz_set_ui(contn,0);
+	if ((file = fopen("primes.txt", "r")) != NULL) // open file
+	{
+		char buf[BUFSIZ];
+		
+		while(!feof(file)){
+			mpz_add_ui(contn,contn,1);//contn = contn + 1
+			memset(buf, 0, BUFSIZ);
+			if(fgets(buf,BUFSIZ,file)!=NULL){
+				mpz_init_set_str(mod, buf, 10);//se asigna un numero del archivo a mod
+				mpz_init_set_str(exp, buf, 10);//se asigna un numero del archivo a exp
+				mpz_sub_ui(exp,exp,1);//exp = exp-1
+				mpz_divexact_ui(exp,exp,2);//exp = exp/2
+				mpz_powm(result,n,exp,mod);//potenciacion modular result = (n^exp)%mod
+				//si el resultado es 1 se agrega al archivo
+				if((mpz_cmp_si(result,1)==0)){
+					mpz_add_ui(residuos,residuos,1);//residuos = residuos + 1
+					fr = fopen("residuos.txt","a");
+					fprintf(fr,buf);
+					fclose(fr);
+				}
+				if((mpz_cmp(residuos, longitud)==0))
+					break;
+			}
+		}
+	}else{
+		fprintf(stderr,"Falta archivo primes.txt");
+		exit(EXIT_FAILURE);
+	}
+	mpz_clear(result);
+	mpz_clear(exp);
+	mpz_clear(mod);
+	printf("Se usaron ");  
+	mpz_out_str(stdout,10,contn);
+	printf(" primos\n");
+	mpz_clear(contn);
+}
+
+/**
+ * @brief calcula el numero de residuos del numero n que se necesitan
+ * para factorizar el numero n
+ * @param n: numero que se le calcula la longitud de la base
+ * @param result: variable en la que se devuelve el valor calculado
+ */
+void longitudBase(mpfr_t n, mpz_t result){
+	//formuala: result = ((e^sqrt(ln(n)*ln(ln(n))))^(sqrt(2)/4))
+	mpfr_t ln1, ln2,e,pow;//variables
+	mpfr_init(ln1);
+	mpfr_init(ln2);
+	mpfr_init(e);
+	mpfr_init(pow);
+	mpfr_set_str(e, "2.71828182845904523536", 10, MPFR_RNDZ);//define euler
+	mpfr_set_str(pow, "0.3535533905932738", 10, MPFR_RNDZ);//define sqrt(2)/4
+	mpfr_log(ln1, n, MPFR_RNDZ);
+	mpfr_log(ln2, ln1,MPFR_RNDZ);
+	mpfr_mul(n, ln1, ln2, MPFR_RNDZ);
+	mpfr_sqrt(n, n, MPFR_RNDZ);
+	mpfr_pow (n, e, n, MPFR_RNDZ);
+	mpfr_pow (n, n, pow, MPFR_RNDZ);
+	mpfr_get_z(result, n, MPFR_RNDZ);//se le asigna a result la parte entera de n
+	mpfr_clear(ln1);
+	mpfr_clear(ln2);
+	mpfr_clear(e);
+}
+
+/**
+ * @brief calcula el intervalo en el que se deben probar los residuos 
+ * cuadraticos del numero n
+ * @param n: numero que se le calcula el intervalo que necesita
+ * @param result: variable que se ultiliza para devolver el resultado
+ */
+void intervaloBase(mpfr_t n, mpz_t result){
+	//formuala: result = ((e^sqrt(ln(n)*ln(ln(n))))^(sqrt(2)/4))^3
+	mpfr_t ln1, ln2,e,pow;
+	mpfr_init(ln1);
+	mpfr_init(ln2);
+	mpfr_init(e);
+	mpfr_init(pow);
+	mpz_init(result);
+	mpfr_set_str(e, "2.71828182845904523536", 10, MPFR_RNDZ);//define euler
+	mpfr_set_str(pow, "0.3535533905932738", 10, MPFR_RNDZ);//define sqrt(2)/4
+	mpfr_log(ln1, n, MPFR_RNDZ);//ln1 = log(n)
+	mpfr_log(ln2, ln1,MPFR_RNDZ);//ln2 = log(log(n))
+	mpfr_mul(n, ln1, ln2, MPFR_RNDZ);//n = ln1*ln1
+	mpfr_sqrt(n, n, MPFR_RNDZ);// n = sqrt(n)
+	mpfr_pow (n, e, n, MPFR_RNDZ);// n = e^n
+	mpfr_pow (n, n, pow, MPFR_RNDZ);// n = n^pow
+	mpfr_pow_si(n, n, 3, MPFR_RNDZ);//n = n^3
+	//mpfr_out_str(stdout, 10, 0, n, MPFR_RNDZ);
+	mpfr_get_z(result, n, MPFR_RNDZ);//se le asigna a result la parte entera de n
+	mpfr_clear(ln1);
+	mpfr_clear(ln2);
+	mpfr_clear(e);
+	mpfr_clear(pow);
+}
+
+void polinomioFermat(mpz_t n, mpz_t intervalo){
+	//Q(Xi)=(sqrt(n)+i)^2-n
+	mpz_t raiz;//sqrt(n)
+	mpz_t limite;//limite del ciclo
+	mpz_t result;//resultados del polinomio
+	mpz_init(raiz);
+	mpz_init(limite);
+	mpz_init(result);
+	mpz_set(limite,intervalo);//limite = intervalo
+	mpz_sqrt(raiz,n);//raiz = sqrt(n)
+	mpz_mul_si(intervalo,intervalo,-1);//intervalo = -1*intervalo
+	
+	FILE * fp;
+	fp = fopen("polinomio.txt","w");
+	fclose(fp);
+	char buf[BUFSIZ];
+	
+	while(mpz_cmp(intervalo,limite)!=1){
+		//calcular resultado
+		mpz_add(result,raiz,intervalo);//result=raiz+intervalo
+		mpz_pow_ui(result,result,2);//result = result^2
+		mpz_sub(result,result,n);//result = result-n
+		
+		//Si al validar el resultado da 1 se agrega al archivo polinomio
+		if(validarResultado(result)){
+			//agregar al archivo
+			memset(buf,0,BUFSIZ);
+			fp = fopen("polinomio.txt","a");
+			mpz_out_str(fp,10,result);
+			fprintf(fp,"\n");
+			fclose(fp);
+		}
+		//se incrementa el valor del intervalo en 1
+		mpz_add_ui(intervalo,intervalo,1);
+	}
+	mpz_clear(raiz);
+	mpz_clear(limite);
+	mpz_clear(result);
+}
+
+int validarResultado(mpz_t result){
+	mpz_t p;//primo
+	mpz_t resultf;
+	mpz_init(resultf);//variable de resultado final
+	mpz_init(p);
+	mpz_set(resultf,result);//resultf = result
+	//si el resultado es negativo se vuelve positivo
+	if(mpz_sgn(resultf)==-1)
+			mpz_mul_si(resultf,resultf,-1);
+	FILE * fr;
+	fr = fopen("residuos.txt","r");
+	char buf[BUFSIZ];
+	int bp = 0;
+	while(!feof(fr)){
+		memset(buf,0,BUFSIZ);
+		fgets(buf,BUFSIZ,fr);
+		mpz_init_set_str(p, buf, 10);
+		while((mpz_divisible_p(resultf,p)!=0 && mpz_cmp_ui(p,0)!=0))
+		{
+			bp = 1;
+			mpz_divexact(resultf,resultf,p);
+			if(mpz_cmp_ui(resultf,1)==0){
+				break;
+			}
+		}
+	}
+	if(bp==0){
+		//mpz_out_str(stdout,10,result);
+		//printf("\n");
+	}
+	fclose(fr);
+	if(mpz_cmp_si(resultf,1)==0){
+		return 1;
+	}else{
+		return 0;
+	}
+}

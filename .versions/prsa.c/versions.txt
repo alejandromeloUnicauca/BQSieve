@@ -1,0 +1,7 @@
+4628b4b501fc7be20b778ca46d7e68600eaf1b76 residuos cuadraticos
+acbd7a669c5519197db5c708e8aa83aee06975aa Funcionando
+22210c6448546e0e22f5b12728cf09aae6bbd9b5 polinomio fermat
+8ce0136554c14df528388ca18171f84fb8eaff6a Polinomio corregido
+be897bad893398896fa0948757e49eda127f2195 Calculo de tiempo añadido
+f7712336d72e614df263da2afb26dffb63efb1c1 Cambio de mensaje intervalo polinomio
+f532ae0d57e38680e8e13d42cff03de44e952639 Reduccion del polinomio por bloques

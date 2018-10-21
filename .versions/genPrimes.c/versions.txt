@@ -1,0 +1,5 @@
+58d70e8fe7fbd014752883540283772ef82e621d Generar primos hasta 100000
+bd345be6deecd3b3fdb005118bca9643b49f9856 Generar primos infinitos
+54a660f12b515ad8c317802131eda0b6263dd35b Genera primos y se guardan en archivo
+49cde85c7a51cde45a96781228c2fd88e75ec8b4 bugs version anterior corregidos
+012cee31b0db860018264bba3897def63b7bfb94 bugs version anterior corregidos

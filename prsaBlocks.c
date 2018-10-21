@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "split.h"
+#include "structsqs.h"
 #include <unistd.h>
 
 void agregarAVectorBlock();
@@ -34,8 +35,9 @@ void reducirPolinomio();
 int **matriz;
 int posFila = 0;//pos fila matriz para agregar 
 int n_block;
+//almacena informacion para recuperar el vector de los numeros suaves
+blocks_div_table * block_table;
 int main(int argc, char * argv[]){	
-	//TODO: matriz comentada, n hex
 	if(argc != 3){
 		fprintf(stderr,"Parametros no validos\n");
 		fprintf(stderr,"Debe especificar el numero que se va factorizar y la cantidad de primos por bloque\n");
@@ -48,6 +50,8 @@ int main(int argc, char * argv[]){
 	FILE * fgcTemp;
 	fgcTemp = fopen("gcd.txt","w");
 	fclose(fgcTemp);
+	
+	
 	
 	clock_t t_inicio, t_final;
 	
@@ -67,12 +71,12 @@ int main(int argc, char * argv[]){
 		
 	//digitos de N
 	printf("Numero de digitos: %lu\n",strlen(argv[1]));
-	mpz_set_str(n, argv[1], 16);
+	mpz_set_str(n, argv[1], 10);
 	mpz_out_str(stdout,10,n);
 	printf("\n");
 	
 	//longitud de la base de primos
-	mpfr_set_str(num, argv[1], 16, MPFR_RNDU);
+	mpfr_set_str(num, argv[1], 10, MPFR_RNDU);
 	longitudBase(num,longitudB);
 	printf("Longitud de la base:");
 	mpz_out_str(stdout,10,longitudB);
@@ -83,12 +87,11 @@ int main(int argc, char * argv[]){
 		n_block = cPrimes;
 	
 	
-	
 	crearMatrizNula(cPrimes+1,cPrimes);
 	
 	
 	//intervalo del polinomio
-	mpfr_set_str(num, argv[1], 16, MPFR_RNDU);
+	mpfr_set_str(num, argv[1], 10, MPFR_RNDU);
 	intervaloPolinomio(num,intervaloP);
 	printf("intervalo del polinomio: ");
 	mpz_out_str(stdout,10,intervaloP);
@@ -117,14 +120,14 @@ int main(int argc, char * argv[]){
 	printf("tiempo de calculo del polinomio:%fs\n",segundos);
 	
 	
-	//imprimirMatriz(cPrimes+1,cPrimes);
+	imprimirMatriz(cPrimes+1,cPrimes);
 	
-	//Liberar espacio de variables
+	//Liberar memoria
 	mpz_clear(n);
 	mpz_clear(intervaloP);
 	mpz_clear(longitudB);
 	mpfr_clear(num);
-
+	
 	exit(EXIT_SUCCESS);
 }
 
@@ -140,11 +143,12 @@ void crearMatrizNula(int filas, int columnas){
 }
 
 void imprimirMatriz(int filas, int columnas){
-	for (int i = 0; i < filas; i++)
+	
+	for (int i = 0; i < columnas; i++)
 	{
-		for (int j = 0; j < columnas; j++)
+		for (int j = 0; j < filas; j++)
 		{
-			printf("%d ",matriz[i][j]);
+			printf("%d ",matriz[j][i]);
 		}
 		printf("\n");
 		
@@ -300,8 +304,9 @@ void polinomioFermat(mpz_t n, mpz_t intervalo, int numSuaves){
 	mpz_init(result);
 	
 	mpz_set(limite,intervalo);//limite = intervalo
+	mpz_set_ui(intervalo,0);
 	mpz_sqrt(raiz,n);//raiz = sqrt(n)
-	mpz_mul_si(intervalo,intervalo,-1);//intervalo = -1*intervalo
+	//mpz_mul_si(intervalo,intervalo,-1);//intervalo = -1*intervalo
 	
 	FILE * fp;
 	if((fp = fopen("polinomioB.txt","w"))==NULL){
@@ -311,11 +316,12 @@ void polinomioFermat(mpz_t n, mpz_t intervalo, int numSuaves){
 	fclose(fp);
 
 	char buf[BUFSIZ];
-	
-	while(mpz_cmp(intervalo,limite)!=1){
+	while(mpz_cmp(intervalo,limite)!=0){
+		mpz_mul_si(intervalo,intervalo,-1);
 		if(numSuaves == 0)break;//condicion para saber si se encontraron todos los suaves que se necesitan
 		//se incrementa el valor del intervalo en 1
-		mpz_add_ui(intervalo,intervalo,1);
+		if(mpz_sgn(intervalo)==1 || mpz_sgn(intervalo)==0)
+			mpz_add_ui(intervalo,intervalo,1);
 		
 		//calcular resultado
 		mpz_add(result,raiz,intervalo);//result=raiz+intervalo
@@ -346,8 +352,7 @@ void polinomioFermat(mpz_t n, mpz_t intervalo, int numSuaves){
 			fclose(fp);
 			if(bd==1)continue;//si el numero del polinomio ya esta continua con el siguiente
 			numSuaves--;//se encontro un suave no repetido
-			//descomentar
-			//agregarAVectorBlock();		
+			agregarAVectorBlock();		
 			posFila++;
 			//agregar al archivo
 			memset(buf,0,BUFSIZ);
@@ -447,6 +452,8 @@ int validarResultado(mpz_t result){
 	mpz_t mcd;//valor del mcd
 	mpz_init(mcd);
 	
+	
+	//block_table = (blocks_div_table*)malloc(cPrimes*sizeof(blocks_div_table*));
 	//TODO:Cambiar archivo temporal por demora
 	FILE * fgcTemp;
 	fgcTemp = fopen("gcdTemp.txt","w");
@@ -589,26 +596,6 @@ void agregarAVectorBlock(){
 	fclose(fgcdTemp);	
 }
 
-void agregarAVectorDiv(){
-	//TODO arreglar mcd buscar bug se repite el numero mcd no lo cambia
-	char buf[BUFSIZ];
-	FILE * fdiv;
-	fdiv = fopen("div.txt","r");
-	while(!feof(fdiv)){
-		memset(buf,0,BUFSIZ);
-		if(fgets(buf,BUFSIZ,fdiv)==NULL){
-			break;
-		}
-		
-		char ** tokens;
-		int n = 0;
-		tokens = split(buf,";",&n);
-		
-		insertarNumero(posFila,atoi(tokens[0]),atoi(tokens[1]));
-	}
-	fclose(fdiv);	
-}
-
 void insertarNumero(int fila, int columna, int valor){
 	
 	//printf("Fila:%d Columna:%d Valor:%d\n",fila,columna,valor);
@@ -633,67 +620,3 @@ void insertarNumero(int fila, int columna, int valor){
 		return;
 	}
 }
-
-/*void reducirPolinomio(){
-	FILE * fp;
-	fp = fopen("polinomio.txt","r");
-
-	FILE * fpr;
-	fpr = fopen("polinomioR.txt","w");
-	fclose(fpr);
-
-	char buf[BUFSIZ];
-
-	mpz_t valorP;//valor del polinomio
-	mpz_t valorPC;//copia del valor del polinomio
-	mpz_init(valorP);
-	mpz_init(valorPC);
-
-	mpz_t valorB;//valor del bloque
-	mpz_init(valorB);
-
-	mpz_t mcd;//valor del bloque
-	mpz_init(mcd);
-
-	while(!feof(fp)){
-		memset(buf,0,BUFSIZ);
-		if(fgets(buf,BUFSIZ,fp)!=NULL){
-			mpz_init_set_str(valorP, buf, 10);
-			mpz_init_set_str(valorPC, buf, 10);
-			FILE * fb;
-			fb = fopen("bloques.txt","r");
-			while(!feof(fb)){
-				memset(buf,0,BUFSIZ);
-				if(fgets(buf,BUFSIZ,fb)!=NULL){
-					mpz_init_set_str(valorB, buf, 10);
-					do{//TODO: ARREGLAR CONDICION
-						printf("MCD:");
-						mpz_gcd(mcd,valorP,valorB);
-						mpz_out_str(stdout,10,mcd);
-						printf("\n");
-						if(mpz_cmp_ui(mcd,1)==0){
-							printf("break\n");
-							break;
-						}
-						mpz_divexact(valorP,valorP,mcd);
-						printf("Resultado Division:");
-						mpz_out_str(stdout,10,valorP);
-						printf("\n");
-					}while(mpz_cmp_ui(mcd,1)!=0);
-				}
-			}
-			printf("Resultado Final:");
-			mpz_out_str(stdout,10,valorP);
-			printf("\n");
-			fclose(fb);
-			if(mpz_cmp_ui(valorP,1)==0){
-				fpr = fopen("polinomioR.txt","a");
-				mpz_out_str(fpr,10,valorPC);
-				fprintf(fpr,"\n");
-				fclose(fpr);
-			}
-		}
-	}
-
-	fclose(fp);
-}*/
