@@ -20,6 +20,7 @@
 
 void agregarAVectorBlock();
 void bloques(int n);
+int buscarSuave(mpz_t suave);
 int calcularResiduos(mpz_t n, mpz_t longitud);
 void crearMatrizNula(int filas, int columnas);
 void insertarNumero(int fila, int columna, int posFila);
@@ -31,12 +32,14 @@ int validarResultado(mpz_t result);
 
 void reducirPolinomio();
 
-
+//TODO:quitar variables globales
 int **matriz;
 int posFila = 0;//pos fila matriz para agregar 
 int n_block;
+int cPrimes;
 //almacena informacion para recuperar el vector de los numeros suaves
-blocks_div_table * block_table;
+data_div_table block_table;
+
 int main(int argc, char * argv[]){	
 	if(argc != 3){
 		fprintf(stderr,"Parametros no validos\n");
@@ -50,7 +53,6 @@ int main(int argc, char * argv[]){
 	FILE * fgcTemp;
 	fgcTemp = fopen("gcd.txt","w");
 	fclose(fgcTemp);
-	
 	
 	
 	clock_t t_inicio, t_final;
@@ -72,8 +74,8 @@ int main(int argc, char * argv[]){
 	//digitos de N
 	printf("Numero de digitos: %lu\n",strlen(argv[1]));
 	mpz_set_str(n, argv[1], 10);
-	mpz_out_str(stdout,10,n);
-	printf("\n");
+	//mpz_out_str(stdout,10,n);
+	//printf("\n");
 	
 	//longitud de la base de primos
 	mpfr_set_str(num, argv[1], 10, MPFR_RNDU);
@@ -82,11 +84,11 @@ int main(int argc, char * argv[]){
 	mpz_out_str(stdout,10,longitudB);
 	printf("\n");
 	
-	int cPrimes = mpz_get_ui(longitudB);//cantidad de primos
+	cPrimes = mpz_get_ui(longitudB);//cantidad de primos
 	if(cPrimes <= n_block)
 		n_block = cPrimes;
 	
-	
+	block_table.data = (data_div*)malloc((cPrimes+1)*sizeof(data_div));
 	crearMatrizNula(cPrimes+1,cPrimes);
 	
 	
@@ -119,7 +121,6 @@ int main(int argc, char * argv[]){
 	segundos = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;
 	printf("tiempo de calculo del polinomio:%fs\n",segundos);
 	
-	
 	imprimirMatriz(cPrimes+1,cPrimes);
 	
 	//Liberar memoria
@@ -127,6 +128,8 @@ int main(int argc, char * argv[]){
 	mpz_clear(intervaloP);
 	mpz_clear(longitudB);
 	mpfr_clear(num);
+	free(block_table.data);
+	free(matriz);
 	
 	exit(EXIT_SUCCESS);
 }
@@ -135,6 +138,7 @@ int main(int argc, char * argv[]){
 void crearMatrizNula(int filas, int columnas){
 	//reservar memoria para matriz
 	matriz = (int**)malloc(filas*sizeof(int*));
+	
 	for (int i = 0; i < filas; i++) 
 	{
 		matriz[i] = (int*)malloc(columnas*sizeof(int));
@@ -143,16 +147,33 @@ void crearMatrizNula(int filas, int columnas){
 }
 
 void imprimirMatriz(int filas, int columnas){
-	
-	for (int i = 0; i < columnas; i++)
+	FILE* f = fopen("matrix.txt","w");
+	printf("%d %d\n",filas, columnas);
+	fprintf(f,"%d %d\n",filas,columnas);
+	int v[columnas];
+	int cont;
+	for (int i = 0; i < filas; i++)
 	{
-		for (int j = 0; j < filas; j++)
+		cont = 0;
+		for (int j = 0; j < columnas; j++)
 		{
-			printf("%d ",matriz[j][i]);
+			printf("%d ",matriz[i][j]);
+			if(matriz[i][j]==1){
+				v[cont] = j;
+				cont++;
+			}
 		}
-		printf("\n");
-		
+		fprintf(f,"%d ",cont);
+		for (int k = 0; k < cont; k++)
+		{
+			fprintf(f,"%d ",v[k]);
+		}
+		printf("\n");	
+		fprintf(f,"\n");
 	}
+	
+	
+	fclose(f);
 }	
 
 /**
@@ -213,12 +234,13 @@ int calcularResiduos(mpz_t n, mpz_t longitud){
 				fclose(fr);
 			}
 			//si los residuos es igual a la longitud termina
-			if((mpz_cmp_ui(longitud,contRes)==0))
+			if((mpz_cmp_ui(longitud,contRes)==0)){
+				mpz_clear(p);
 				break;
+			}
+			mpz_clear(p);
 		}
 	}
-	
-	mpz_clear(p);
 	printf("Se usaron %d primos\n",contn);  
 	return contRes;
 }
@@ -269,7 +291,6 @@ void intervaloPolinomio(mpfr_t n, mpz_t result){
 	mpfr_init(ln2);
 	mpfr_init(e);
 	mpfr_init(pow);
-	mpz_init(result);
 	
 	mpfr_set_str(e, "2.71828182845904523536", 10, MPFR_RNDZ);//define euler
 	mpfr_set_str(pow, "0.3535533905932738", 10, MPFR_RNDZ);//define sqrt(2)/4
@@ -316,6 +337,7 @@ void polinomioFermat(mpz_t n, mpz_t intervalo, int numSuaves){
 	fclose(fp);
 
 	char buf[BUFSIZ];
+	
 	while(mpz_cmp(intervalo,limite)!=0){
 		mpz_mul_si(intervalo,intervalo,-1);
 		if(numSuaves == 0)break;//condicion para saber si se encontraron todos los suaves que se necesitan
@@ -330,27 +352,7 @@ void polinomioFermat(mpz_t n, mpz_t intervalo, int numSuaves){
 		
 		//Si al validar el resultado da 1 se agrega al archivo polinomio
 		if(validarResultado(result)){
-			//validar si el numero ya esta
-			if((fp = fopen("polinomioB.txt","r"))==NULL){
-					perror("fopen");
-					exit(EXIT_FAILURE);
-			}
-			int bd = 0;
-			while(!feof(fp)){
-				memset(buf,0,BUFSIZ);
-				if(fgets(buf,BUFSIZ,fp)!=NULL){
-					mpz_t numTemp;
-					mpz_init(numTemp);
-					mpz_set_str(numTemp,buf,10);
-					if(mpz_cmp(result,numTemp)==0){
-						//printf("Colision");
-						bd=1;
-						break;
-					}
-				}
-			}
-			fclose(fp);
-			if(bd==1)continue;//si el numero del polinomio ya esta continua con el siguiente
+			if(buscarSuave(result))continue;//si el numero del polinomio ya esta continua con el siguiente
 			numSuaves--;//se encontro un suave no repetido
 			agregarAVectorBlock();		
 			posFila++;
@@ -360,6 +362,11 @@ void polinomioFermat(mpz_t n, mpz_t intervalo, int numSuaves){
 				perror("fopen");
 				exit(EXIT_FAILURE);
 			}
+			mpz_t Xi;
+			mpz_init(Xi);
+			mpz_add(Xi,raiz,intervalo);
+			mpz_out_str(fp,10,Xi);
+			fprintf(fp,";");
 			mpz_out_str(fp,10,result);
 			fprintf(fp,"\n");
 			fclose(fp);
@@ -369,6 +376,46 @@ void polinomioFermat(mpz_t n, mpz_t intervalo, int numSuaves){
 	mpz_clear(raiz);
 	mpz_clear(limite);
 	mpz_clear(result);
+}
+
+/**
+ * @brief Busca el numero suave si ya esta almacenado en el archivo
+ * @param suave: numero suave que sale del polinomio
+ * @return retorna 0 si el numero no esta en el archivo o 1 si el numero ya esta almacenado
+ */
+int buscarSuave(mpz_t suave){
+	char buf[BUFSIZ];
+	FILE * fp;
+	//validar si el numero ya esta
+	if((fp = fopen("polinomioB.txt","r"))==NULL){
+			perror("fopen");
+			exit(EXIT_FAILURE);
+	}
+	mpz_t numTemp;
+	int bd = 0;
+	while(!feof(fp)){
+		memset(buf,0,BUFSIZ);
+		if(fgets(buf,BUFSIZ,fp)!=NULL){
+			
+			char ** tokens;
+			int n = 0;
+			tokens = split(buf,";",&n);
+			if(n==0)break;
+			mpz_init(numTemp);
+			mpz_set_str(numTemp,tokens[1],10);
+			free(tokens);
+			if(mpz_cmp(suave,numTemp)==0){
+				//printf("Colision");
+				bd=1;
+				mpz_clear(numTemp);
+				break;
+			}
+			mpz_clear(numTemp);
+		}
+	}
+	fclose(fp);
+	
+	return bd;
 }
 
 /**
@@ -395,7 +442,6 @@ void bloques(int n){
 	mpz_set_ui(mulTemp,1);
 
 	mpz_t valorTemp;//variable para almacenar el numero del archivo
-	mpz_init(valorTemp);
 
 	FILE * fr;
 	fr = fopen("residuos.txt","r");
@@ -411,6 +457,7 @@ void bloques(int n){
 				mpz_init_set_str(valorTemp, buf, 10);
 				mpz_mul(mulTemp,mulTemp,valorTemp);//mulTemp=mulTemp*valorTemp
 				tb--;
+				mpz_clear(valorTemp);
   			}
   		}
   		fbf = fopen("bloquesFac.txt","a");
@@ -426,7 +473,6 @@ void bloques(int n){
 	}
 	fclose(fr);
 	mpz_clear(mulTemp);
-	mpz_clear(valorTemp);
 }
 
 /**
@@ -436,32 +482,29 @@ void bloques(int n){
  * @param result: Numero que se valida si es divisible en la base
  * @return retorna 1 si es divisible en la base o 0 si no lo es
  */
+ //TODO:Cambiar nombre parametro
 int validarResultado(mpz_t result){
-
+	
 	char buf[BUFSIZ];
 	mpz_t resultf;
 	mpz_init(resultf);//variable de resultado final
 	mpz_set(resultf,result);//resultf = result
 	//si el resultado es negativo se vuelve positivo
 	if(mpz_sgn(resultf)==-1)
-			mpz_mul_si(resultf,resultf,-1);
+		mpz_mul_si(resultf,resultf,-1);
 
 	mpz_t valorB;//valor del bloque
-	mpz_init(valorB);
 
 	mpz_t mcd;//valor del mcd
 	mpz_init(mcd);
 	
-	
-	//block_table = (blocks_div_table*)malloc(cPrimes*sizeof(blocks_div_table*));
-	//TODO:Cambiar archivo temporal por demora
-	FILE * fgcTemp;
-	fgcTemp = fopen("gcdTemp.txt","w");
-	fclose(fgcTemp);
+	memset(block_table.data,0,(cPrimes+1)*sizeof(data_div));
 	FILE * fb;
 	fb = fopen("bloques.txt","r");
 	int contBloque = 0;
+	int i = 0;
 	while(!feof(fb)){
+		
 		memset(buf,0,BUFSIZ);
 		
 		if(fgets(buf,BUFSIZ,fb)==NULL){
@@ -474,27 +517,26 @@ int validarResultado(mpz_t result){
 		mpz_t mcdA;//variable para controlar cuando cambia el valor del mcd
 		mpz_init(mcdA);
 		
-		
 		//se le asigna el valor de mcd a mcdA
 		mpz_gcd(mcd,resultf,valorB);
 		mpz_set(mcdA,mcd);
 		int contGcda = 0;
 		
+		//TODO:Optimizar ciclo
 		do{
 			mpz_gcd(mcd,resultf,valorB);
 			//si el maximo comun divisor cambia se guarda en un archivo temporal
-			if(mpz_cmp(mcd,mcdA)==0){
-				contGcda++;
-			}else{
-				//Se almacena en un archivo temporal el gcd
+			if(mpz_cmp(mcd,mcdA)!=0){
+				//Se almacena en una estructura el gcd
 				//las veces que se repite y el bloque al que pertenece
-				fgcTemp = fopen("gcdTemp.txt","a");
-				mpz_out_str(fgcTemp,10,mcdA);		
-				fprintf(fgcTemp,";%d",contGcda);
-				fprintf(fgcTemp,";%d\n",contBloque);
-				fclose(fgcTemp);
+				block_table.data[i].block = contBloque;
+				block_table.data[i].gcd = mpz_get_ui(mcdA);
+				block_table.data[i].periodo = contGcda;
 				mpz_set(mcdA,mcd);
 				contGcda = 1;
+				i++;
+			}else{
+				contGcda++;
 			}
 			//si el maximo comun divisor es 1 sale del ciclo
 			if(mpz_cmp_ui(mcd,1)==0){
@@ -503,54 +545,58 @@ int validarResultado(mpz_t result){
 			
 			mpz_divexact(resultf,resultf,mcd);
 		}while(mpz_cmp_ui(mcd,1)!=0);
+		
+		mpz_clear(valorB);
 		mpz_clear(mcdA);
 	}
 	fclose(fb);
-	
+	mpz_clear(mcd);
 	if(mpz_cmp_ui(resultf,1)==0){
-		FILE * fgc = fopen("gcd.txt","a");
-		fgcTemp = fopen("gcdTemp.txt","r");
-		while(!feof(fgcTemp)){
-			memset(buf,0,BUFSIZ);
-			if(fgets(buf,BUFSIZ,fgcTemp)==NULL){
-				break;
-			}	
-			fprintf(fgc,"%s",buf);
-		}
-		fclose(fgcTemp);
-		fclose(fgc);
-		
+		mpz_clear(resultf);
+		//mpz_out_str(stdout,10,result);
+		//printf("\n");
 		return 1;
 	}
-
+	mpz_clear(resultf);
 	return 0;
 }
 
+/**
+ * @brief 
+ * @param 
+ * @return
+ */
 void agregarAVectorBlock(){
-	char buf[BUFSIZ];
-	FILE * fgcdTemp;
-	fgcdTemp = fopen("gcdTemp.txt","r");
-	
-	while(!feof(fgcdTemp)){
-		memset(buf,0,BUFSIZ);
-		if(fgets(buf,BUFSIZ,fgcdTemp)==NULL){
-			break;
+	//TODO:Cambiar estrucura y quitar lectura del archivo, la estructura ya guarda bien la informacion
+	int i = 0;
+	/*if(posFila==105){
+		while(block_table.data[i].gcd!=0){
+			int contV = block_table.data[i].periodo;//cliclos que se repite el mcd
+			int block = block_table.data[i].block;//bloque en el que esta el mcd
+			int mcdE = block_table.data[i].gcd;
+			i++;
+			printf("periodo:%d, bloque:%d, gcd:%d\n",contV,block,mcdE);
 		}
-		
+	}
+	i=0;*/
+	while(block_table.data[i].gcd!=0){
+		/*if(posFila==105){
+			printf("i=%d\n",i);	
+			printf("%d,%d,%d\n",block_table.data[i].gcd,block_table.data[i].periodo,block_table.data[i].block);
+		}*/
 		FILE * fblocks;
 		fblocks = fopen("bloquesFac.txt","r");
 	
-		char ** tokens;
-		int n = 0;
-		tokens = split(buf,";",&n);
 		mpz_t mcd;//valor del mcd
 		mpz_init(mcd);
-		mpz_set_str(mcd,tokens[0],10);
+		mpz_set_ui(mcd,block_table.data[i].gcd);
 		
-		int contV = atoi(tokens[1]);//cliclos que se repite el mcd
-		int block = atoi(tokens[2]);//bloque en el que esta el mcd
-		int mcdE = atoi(tokens[0]);
+		int contV = block_table.data[i].periodo;//cliclos que se repite el mcd
+		int block = block_table.data[i].block;//bloque en el que esta el mcd
+		//int mcdE = block_table.data[i].gcd;
+		i++;
 		//TODO: arreglar ciclo
+		//si los periodos son pares se ingresan ceros
 		if((contV%2)==0){
 			//printf("fila:%d Block:%d mcd:%d par\n",posFila,block,mcdE);
 			for (int i = 0; i < n_block; i++)
@@ -574,32 +620,43 @@ void agregarAVectorBlock(){
 				
 				for (int i = 0; i < n2-1; i++)
 				{
+					
 					int nblock = atoi(tokens2[i]);
+					/*if(posFila==105){
+						mpz_out_str(stdout,10,mcd);
+						printf(";P=%d\n",nblock);
+						fflush(stdout);
+					}*/
 					if(mpz_divisible_ui_p(mcd,nblock)){
 						insertarNumero(posFila,(block-1)*n_block+i,contV%2);
 					}else{
 						insertarNumero(posFila,(block-1)*n_block+i,0);
 					}
 				}
+				free(tokens2);
 			}
 		}
 		
 		//printf("%d; %d\n",contV,block);
 		
-		/*TODO:leer archivo de bloquesFac
-		 * dividir el mcd entre los numeros del bloque
-		 * agregar los resultados al vector
-		*/
 		mpz_clear(mcd);
 		fclose(fblocks);
+		/*if(posFila==105){
+			for (int i = 0; i < 115; i++)
+			{
+				printf("%d ",matriz[105][i]);
+			}
+		}*/
 	}
-	fclose(fgcdTemp);	
 }
 
 void insertarNumero(int fila, int columna, int valor){
 	
-	//printf("Fila:%d Columna:%d Valor:%d\n",fila,columna,valor);
-	
+	/*if(fila==105){
+		printf("Fila:%d Columna:%d Valor:%d\n",fila,columna,valor);
+		printf("Fila:%d Columna:%d Valor:%d\n",fila,columna,matriz[fila][columna]);
+	}
+	fflush(stdout);*/
 	if(matriz[fila][columna] == 0 && valor == 0){
 		matriz[fila][columna] = 0;
 		return;
