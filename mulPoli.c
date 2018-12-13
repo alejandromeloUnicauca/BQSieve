@@ -126,7 +126,7 @@ int main(int argc, char * argv[]){
 		
 		printf("q:");
 		mpz_out_str(stdout,10,gcd);
-		printf("\n");
+		printf("\n\n");
 		
 		mpz_clear(mulX);
 		mpz_clear(sqr);

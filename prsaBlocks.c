@@ -87,7 +87,7 @@ int main(int argc, char * argv[]){
 	cPrimes = mpz_get_ui(longitudB);//cantidad de primos
 	if(cPrimes <= n_block)
 		n_block = cPrimes;
-	
+	 
 	block_table.data = (data_div*)malloc((cPrimes+1)*sizeof(data_div));
 	crearMatrizNula(cPrimes+1,cPrimes);
 	
@@ -131,6 +131,11 @@ int main(int argc, char * argv[]){
 	free(block_table.data);
 	free(matriz);
 	
+	for (int i = 0; i < cPrimes; i++) 
+	{
+		free(matriz[i]);
+	}
+	
 	exit(EXIT_SUCCESS);
 }
 
@@ -171,7 +176,6 @@ void imprimirMatriz(int filas, int columnas){
 		printf("\n");	
 		fprintf(f,"\n");
 	}
-	
 	
 	fclose(f);
 }	
@@ -370,6 +374,7 @@ void polinomioFermat(mpz_t n, mpz_t intervalo, int numSuaves){
 			mpz_out_str(fp,10,result);
 			fprintf(fp,"\n");
 			fclose(fp);
+			mpz_clear(Xi);
 		}
 	}
 	
@@ -399,10 +404,13 @@ int buscarSuave(mpz_t suave){
 			
 			char ** tokens;
 			int n = 0;
+			
 			tokens = split(buf,";",&n);
 			if(n==0)break;
 			mpz_init(numTemp);
 			mpz_set_str(numTemp,tokens[1],10);
+			free(tokens[0]);
+			free(tokens[1]);
 			free(tokens);
 			if(mpz_cmp(suave,numTemp)==0){
 				//printf("Colision");
@@ -579,6 +587,7 @@ void agregarAVectorBlock(){
 		}
 	}
 	i=0;*/
+	//TODO:cambiar condicion del while
 	while(block_table.data[i].gcd!=0){
 		/*if(posFila==105){
 			printf("i=%d\n",i);	
@@ -617,7 +626,6 @@ void agregarAVectorBlock(){
 				char ** tokens2;
 				int n2 = 0;
 				tokens2 = split(buf2,";",&n2);
-				
 				for (int i = 0; i < n2-1; i++)
 				{
 					

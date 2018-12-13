@@ -59,6 +59,7 @@ typedef struct{
 	int n_cols;
 }matrix;
 
+//divisiones sucesivas
 typedef struct{
 	int col;
 	int n_div;

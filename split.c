@@ -24,10 +24,10 @@ char ** split(const char * line, const char * delim, int * tokens) {
   const char * l_ptr;
   const char * aux;
   const char * d_ptr;
-  int nchars;
+  //int nchars;
   int n;
-  int token_count;
-  char * token;
+  //int token_count;
+  //char * token;
   char ** ret;
   int i;
   char * str;

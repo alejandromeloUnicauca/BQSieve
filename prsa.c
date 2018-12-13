@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "split.h"
+#include "structsqs.h"
 #include <unistd.h>
 
 void agregarAVectorDiv();
@@ -29,6 +30,8 @@ int validarResultado(mpz_t result);
 
 int **matriz;
 int posFila = 0;//pos fila matriz
+int i_long;
+data_divT *data_d;
 int main(int argc, char * argv[]){	
 	//TODO: obtimizar y comentar
 	if(argc != 2){
@@ -49,7 +52,6 @@ int main(int argc, char * argv[]){
 	
 	//instancia de variables
 	mpz_init(n);
-	mpz_init(intervaloP);
 	mpz_init(longitudB);
 	mpfr_init(num);
 		
@@ -64,9 +66,10 @@ int main(int argc, char * argv[]){
 	mpz_out_str(stdout,10,longitudB);
 	printf("\n");
 	
-	int i_long = mpz_get_ui(longitudB);//cantidad de primos
+	i_long = mpz_get_ui(longitudB);//cantidad de primos
+	data_d = (data_divT*)malloc((i_long+1)*sizeof(data_divT));
 	
-	crearMatrizNula(i_long+2,i_long);
+	crearMatrizNula(i_long+1,i_long);
 	//imprimirMatriz(i_long+10,i_long);
 	
 	//intervalo del polinomio
@@ -119,15 +122,32 @@ void crearMatrizNula(int filas, int columnas){
 }
 
 void imprimirMatriz(int filas, int columnas){
+	FILE* f = fopen("matrix.txt","w");
+	printf("%d %d\n",filas, columnas);
+	fprintf(f,"%d %d\n",filas,columnas);
+	int v[columnas];
+	int cont;
 	for (int i = 0; i < filas; i++)
 	{
+		cont = 0;
 		for (int j = 0; j < columnas; j++)
 		{
 			printf("%d ",matriz[i][j]);
+			if(matriz[i][j]==1){
+				v[cont] = j;
+				cont++;
+			}
 		}
-		printf("\n");
-		
+		fprintf(f,"%d ",cont);
+		for (int k = 0; k < cont; k++)
+		{
+			fprintf(f,"%d ",v[k]);
+		}
+		printf("\n");	
+		fprintf(f,"\n");
 	}
+	
+	fclose(f);
 }
 
 
@@ -143,7 +163,7 @@ int calcularResiduos(mpz_t n, mpz_t longitud){
 	int contRes = 0;//contador de residuos encontrados
 
 	mpz_t p;//variable temporal para los primos del archivo
-	mpz_init(p);
+	
 	
 	FILE * file;//file primes
 	FILE * fr;//file residuos
@@ -187,19 +207,19 @@ int calcularResiduos(mpz_t n, mpz_t longitud){
 				}
 				fprintf(fr,"%s",buf);
 				fclose(fr);
+				
 			}
+			mpz_clear(p);
 			//si los residuos es igual a la longitud termina
 			if((mpz_cmp_ui(longitud,contRes)==0))
 				break;
 		}
 	}
-	
-	mpz_clear(p);
 	printf("Se usaron %d primos\n",contn);  
 	return contRes;
 }
 
-/**
+/***
  * @brief calcula el numero de residuos que se necesitan
  * para factorizar el numero n
  * @param n: numero que se le calcula la longitud de la base
@@ -280,8 +300,9 @@ void polinomioFermat(mpz_t n, mpz_t intervalo, int numSuaves){
 	mpz_init(result);
 	
 	mpz_set(limite,intervalo);//limite = intervalo
+	mpz_set_ui(intervalo,0);
 	mpz_sqrt(raiz,n);//raiz = sqrt(n)
-	mpz_mul_si(intervalo,intervalo,-1);//intervalo = -1*intervalo
+	//mpz_mul_si(intervalo,intervalo,-1);//intervalo = -1*intervalo
 	
 	FILE * fp;
 	if((fp = fopen("polinomio.txt","w"))==NULL){
@@ -289,19 +310,19 @@ void polinomioFermat(mpz_t n, mpz_t intervalo, int numSuaves){
 		exit(EXIT_FAILURE);
 	}
 	fclose(fp);
-
 	char buf[BUFSIZ];
 	
-	while(mpz_cmp(intervalo,limite)!=1){
+	while(mpz_cmp(intervalo,limite)!=0){
+		mpz_mul_si(intervalo,intervalo,-1);
 		if(numSuaves == 0)break;//condicion para saber si se encontraron todos los suaves que se necesitan
 		//se incrementa el valor del intervalo en 1
-		mpz_add_ui(intervalo,intervalo,1);
+		if(mpz_sgn(intervalo)==1 || mpz_sgn(intervalo)==0)
+			mpz_add_ui(intervalo,intervalo,1);
 		
 		//calcular resultado
 		mpz_add(result,raiz,intervalo);//result=raiz+intervalo
 		mpz_pow_ui(result,result,2);//result = result^2
 		mpz_sub(result,result,n);//result = result-n
-		
 		//Si al validar el resultado da 1 se agrega al archivo polinomio
 		if(validarResultado(result)){
 			//validar si el numero ya esta
@@ -317,9 +338,11 @@ void polinomioFermat(mpz_t n, mpz_t intervalo, int numSuaves){
 					mpz_init(numTemp);
 					mpz_set_str(numTemp,buf,10);
 					if(mpz_cmp(result,numTemp)==0){printf("Colision");bd=1;break;}
+					mpz_clear(numTemp);
 				}
 			}
 			fclose(fp);
+			
 			if(bd==1)continue;//si el numero del polinomio ya esta continua con el siguiente
 			numSuaves--;//se encontro un suave no repetido
 			agregarAVectorDiv();		
@@ -330,9 +353,15 @@ void polinomioFermat(mpz_t n, mpz_t intervalo, int numSuaves){
 				perror("fopen");
 				exit(EXIT_FAILURE);
 			}
+			mpz_t Xi;
+			mpz_init(Xi);
+			mpz_add(Xi,raiz,intervalo);
+			mpz_out_str(fp,10,Xi);
+			fprintf(fp,";");
 			mpz_out_str(fp,10,result);
 			fprintf(fp,"\n");
 			fclose(fp);
+			mpz_clear(Xi);
 		}
 	}
 	
@@ -353,20 +382,17 @@ int validarResultado(mpz_t result){
 	mpz_t resultf;
 	
 	mpz_init(resultf);//variable de resultado final
-	mpz_init(p);
-	
 	mpz_set(resultf,result);//resultf = result
 	//si el resultado es negativo se vuelve positivo
 	if(mpz_sgn(resultf)==-1)
 		mpz_mul_si(resultf,resultf,-1);
+		
+	memset(data_d,0,(i_long+1)*sizeof(data_divT));
 	FILE * fr;
 	if((fr = fopen("residuos.txt","r"))==NULL){
 		perror("fopen");
 		exit(EXIT_FAILURE);
 	}
-	
-	FILE * fdiv;
-	fdiv = fopen("div.txt","w");
 	
 	char buf[BUFSIZ];
 	int col = 0;
@@ -383,42 +409,33 @@ int validarResultado(mpz_t result){
 				break;
 			}
 		}
-		fprintf(fdiv,"%d;%d\n",col,contDiv);
+		data_d[col].col = col;
+		data_d[col].n_div = contDiv;
 		col++;
+		mpz_clear(p);
 	}
 	fclose(fr);
-	fclose(fdiv);
 	if(mpz_cmp_si(resultf,1)==0){
+		mpz_clear(resultf);
 		return 1;
 	}else{
+		mpz_clear(resultf);
 		return 0;
 	}
 }
 
 
 void agregarAVectorDiv(){
-	char buf[BUFSIZ];
-	FILE * fdiv;
-	fdiv = fopen("div.txt","r");
-	while(!feof(fdiv)){
-		memset(buf,0,BUFSIZ);
-		if(fgets(buf,BUFSIZ,fdiv)==NULL){
-			break;
-		}
-		
-		char ** tokens;
-		int n = 0;
-		tokens = split(buf,";",&n);
-		
-		insertarNumero(posFila,atoi(tokens[0]),(atoi(tokens[1])%2));
+	int cont=0;
+	while(cont<i_long){		
+		insertarNumero(posFila,data_d[cont].col,data_d[cont].n_div%2);
+		cont++;
 	}
-	fclose(fdiv);	
 }
 
 void insertarNumero(int fila, int columna, int valor){
 	
 	//printf("Fila:%d Columna:%d Valor:%d\n",fila,columna,valor);
-	
 	if(matriz[fila][columna] == 0 && valor == 0){
 		matriz[fila][columna] = 0;
 		return;
