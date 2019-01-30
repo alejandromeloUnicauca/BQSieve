@@ -15,7 +15,7 @@ typedef struct{
 	int periodo;
 	/** bloque en el que se obtuvo el gcd y el periodo*/
 	int block;
-}data_div;
+}div_data;
 
  /**
   * @brief esta estructura contiene un apuntador para crear un
@@ -24,10 +24,10 @@ typedef struct{
   */
 typedef struct{
 	/**array de datos de las divisiones*/
-	data_div * data;
+	div_data * data;
 	/**numero de elementos en el array*/
 	int n_values;
-}data_div_table;
+}div_data_table;
 
  /**
   * @brief estructura que hace parte de la tabla de bloques en
@@ -35,12 +35,12 @@ typedef struct{
   */
 typedef struct{
 	/**factores del numero prod_factores*/
-	mpz_t * factores;
+	mpz_t * factors;
 	/**multiplicacion de todos los factores*/
-	mpz_t prod_factores;
+	mpz_t prod_factors;
 	/**cantidad de factores*/
-	int n_factores;
-}block_remainders;
+	int n_factors;
+}remainders_block;
 
  /**
   * @brief esta estructura contiene un apuntador para crear un
@@ -48,16 +48,25 @@ typedef struct{
   */
 typedef struct{
 	/**array de bloques*/
-	block_remainders * blocks;
+	remainders_block * blocks;
 	/**cantidad de bloques*/
 	int n_blocks;
-}remainders_block_table;
+}blocks_table;
 
 typedef struct{
-	int * data;
+	int ** data;
 	int n_rows;
 	int n_cols;
 }matrix;
+
+typedef struct{
+	blocks_table blocks; 
+	mpz_t n_remainders;
+	div_data_table blocks_data;
+	matrix mat;
+	mpz_t n;
+	mpz_t interval;
+}qs_struct;
 
 //divisiones sucesivas
 typedef struct{

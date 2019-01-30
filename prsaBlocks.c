@@ -1,5 +1,6 @@
 /**
  * @file 
+
  * @author Jhon Alejandro Melo <alejandromelo@unicauca.edu.co>
  * 			Juan Manuel Campo <>
  * @copyright GNU Public License. 
@@ -18,27 +19,24 @@
 #include "structsqs.h"
 #include <unistd.h>
 
-void agregarAVectorBlock();
+void agregarAVectorBlock(qs_struct qs_data);
 void bloques(int n);
 int buscarSuave(mpz_t suave);
 int calcularResiduos(mpz_t n, mpz_t longitud);
-void crearMatrizNula(int filas, int columnas);
-void insertarNumero(int fila, int columna, int posFila);
-void intervaloPolinomio(mpfr_t n, mpz_t result);
-void imprimirMatriz(int filas, int columnas);
-void longitudBase(mpfr_t n, mpz_t result);
-void polinomioFermat(mpz_t n, mpz_t intervalo, int numSuaves);
-int validarResultado(mpz_t result);
-
+void crearMatrizNula(matrix * matriz);
+void insertarNumero(matrix * matriz, int posFila, int posColumna, int valor);
+void intervaloPolinomio(mpz_t n, mpz_t result);
+void imprimirMatriz(matrix matriz);
+void longitudBase(mpz_t n, mpz_t result);
+void polinomioFermat(qs_struct qs_data);
+int validarBSuave(mpz_t bSuave,qs_struct qs_data);
+void freeToken(char ** token, int n);
 void reducirPolinomio();
 
 //TODO:quitar variables globales
-int **matriz;
 int posFila = 0;//pos fila matriz para agregar 
-int n_block;
-int cPrimes;
 //almacena informacion para recuperar el vector de los numeros suaves
-data_div_table block_table;
+div_data_table block_table;
 
 int main(int argc, char * argv[]){	
 	if(argc != 3){
@@ -48,122 +46,112 @@ int main(int argc, char * argv[]){
 		exit(EXIT_FAILURE);
 	}
 	
-	n_block = atoi(argv[2]);//numeros por bloque 
 	
-	FILE * fgcTemp;
-	fgcTemp = fopen("gcd.txt","w");
-	fclose(fgcTemp);
+	qs_struct qs_data;
+	int cPrimes;
 	
-	
+	qs_data.blocks.n_blocks = atoi(argv[2]);//numeros por bloque 	
 	clock_t t_inicio, t_final;
 	
 	double segundos = 0;
 	
-	//declaracion de variables
-	mpz_t n;
-	mpz_t intervaloP;
-	mpz_t longitudB;
-	mpfr_t num;
-	
 	//instancia de variables
-	mpz_init(n);
-	mpz_init(intervaloP);
-	mpz_init(longitudB);
-	mpfr_init(num);
+	mpz_init(qs_data.n);
+	mpz_init(qs_data.n_remainders);
+	mpz_init(qs_data.interval);
 		
 	//digitos de N
 	printf("Numero de digitos: %lu\n",strlen(argv[1]));
-	mpz_set_str(n, argv[1], 10);
+	mpz_set_str(qs_data.n, argv[1], 10);
 	//mpz_out_str(stdout,10,n);
 	//printf("\n");
 	
 	//longitud de la base de primos
-	mpfr_set_str(num, argv[1], 10, MPFR_RNDU);
-	longitudBase(num,longitudB);
+	longitudBase(qs_data.n,qs_data.n_remainders);
 	printf("Longitud de la base:");
-	mpz_out_str(stdout,10,longitudB);
+	mpz_out_str(stdout,10,qs_data.n_remainders);
 	printf("\n");
 	
-	cPrimes = mpz_get_ui(longitudB);//cantidad de primos
-	if(cPrimes <= n_block)
-		n_block = cPrimes;
+	cPrimes = mpz_get_ui(qs_data.n_remainders);//cantidad de primos
+	if(cPrimes <= qs_data.blocks.n_blocks)
+		qs_data.blocks.n_blocks = cPrimes;
 	 
-	block_table.data = (data_div*)malloc((cPrimes+1)*sizeof(data_div));
-	crearMatrizNula(cPrimes+1,cPrimes);
+	block_table.data = (div_data*)malloc((cPrimes+1)*sizeof(div_data));
 	
+	qs_data.mat.n_cols = cPrimes;
+	qs_data.mat.n_rows = cPrimes+1;
+	crearMatrizNula(&qs_data.mat);
 	
 	//intervalo del polinomio
-	mpfr_set_str(num, argv[1], 10, MPFR_RNDU);
-	intervaloPolinomio(num,intervaloP);
+	intervaloPolinomio(qs_data.n,qs_data.interval);
 	printf("intervalo del polinomio: ");
-	mpz_out_str(stdout,10,intervaloP);
+	mpz_out_str(stdout,10,qs_data.interval);
 	printf("\n");
 	
 	t_inicio = clock();
 	//generar residuos
 	printf("Generando residuos cuadraticos...\n");
-	int residuos = calcularResiduos(n,longitudB);
+	int residuos = calcularResiduos(qs_data.n,qs_data.n_remainders);
 	printf("%d residuos generados en residuos.txt\n",residuos);
 	t_final = clock();
 	segundos = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;
 	printf("tiempo de calculo de residuos:%fs\n",segundos);
 
 	printf("Creando bloques...\n");
-	bloques(n_block);
-	printf("Bloques creados: %.1f\n",ceil((float)cPrimes/n_block));
+	bloques(qs_data.blocks.n_blocks);
+	printf("Bloques creados: %.1f\n",ceil((float)cPrimes/qs_data.blocks.n_blocks));
 	fflush(stdout);
 
 	//Calcular polinomio de Fermat por metodo de bloques
 	t_inicio = clock();
 	printf("Calculando polinomio de Fermat con reduccion por bloques\n");
-	polinomioFermat(n,intervaloP,cPrimes+1);
+	polinomioFermat(qs_data);
 	t_final = clock();
 	segundos = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;
 	printf("tiempo de calculo del polinomio:%fs\n",segundos);
 	
-	imprimirMatriz(cPrimes+1,cPrimes);
+	imprimirMatriz(qs_data.mat);
 	
 	//Liberar memoria
-	mpz_clear(n);
-	mpz_clear(intervaloP);
-	mpz_clear(longitudB);
-	mpfr_clear(num);
+	mpz_clear(qs_data.n);
+	mpz_clear(qs_data.interval);
+	mpz_clear(qs_data.n_remainders);
 	free(block_table.data);
-	free(matriz);
-	
-	for (int i = 0; i < cPrimes; i++) 
+		
+	for (int i = 0; i < qs_data.mat.n_rows; i++) 
 	{
-		free(matriz[i]);
+		free(qs_data.mat.data[i]);
 	}
-	
+	free(qs_data.mat.data);
+
 	exit(EXIT_SUCCESS);
 }
 
 
-void crearMatrizNula(int filas, int columnas){
+void crearMatrizNula(matrix * matriz){
 	//reservar memoria para matriz
-	matriz = (int**)malloc(filas*sizeof(int*));
+	matriz->data = (int**)malloc(matriz->n_rows*sizeof(int*));
 	
-	for (int i = 0; i < filas; i++) 
+	for (int i = 0; i < matriz->n_rows; i++) 
 	{
-		matriz[i] = (int*)malloc(columnas*sizeof(int));
-		memset(matriz[i],0,columnas*sizeof(int));
+		matriz->data[i] = (int*)malloc(matriz->n_cols*sizeof(int));
+		memset(matriz->data[i],0,matriz->n_cols*sizeof(int));
 	}
 }
 
-void imprimirMatriz(int filas, int columnas){
+void imprimirMatriz(matrix matriz){
 	FILE* f = fopen("matrix.txt","w");
-	printf("%d %d\n",filas, columnas);
-	fprintf(f,"%d %d\n",filas,columnas);
-	int v[columnas];
+	printf("%d %d\n",matriz.n_rows, matriz.n_cols);
+	fprintf(f,"%d %d\n",matriz.n_rows, matriz.n_cols);
+	int v[matriz.n_cols];
 	int cont;
-	for (int i = 0; i < filas; i++)
+	for (int i = 0; i < matriz.n_rows; i++)
 	{
 		cont = 0;
-		for (int j = 0; j < columnas; j++)
+		for (int j = 0; j < matriz.n_cols; j++)
 		{
-			printf("%d ",matriz[i][j]);
-			if(matriz[i][j]==1){
+			printf("%d ",matriz.data[i][j]);
+			if(matriz.data[i][j]==1){
 				v[cont] = j;
 				cont++;
 			}
@@ -255,30 +243,33 @@ int calcularResiduos(mpz_t n, mpz_t longitud){
  * @param n: numero que se le calcula la longitud de la base
  * @param result: variable en la que se devuelve el valor calculado
  */
-void longitudBase(mpfr_t n, mpz_t result){
+void longitudBase(mpz_t n, mpz_t result){
 	//formuala: result = ((e^sqrt(ln(n)*ln(ln(n))))^(sqrt(2)/4))
-	mpfr_t ln1, ln2,e,pow;//variables
+	mpfr_t num, ln1, ln2,e,pow;//variables
 	
 	//inicializacion de variables
 	mpfr_init(ln1);
 	mpfr_init(ln2);
 	mpfr_init(e);
 	mpfr_init(pow);
+	mpfr_init(num);
 	
+	mpfr_set_z(num,n,MPFR_RNDZ);
 	mpfr_set_str(e, "2.71828182845904523536", 10, MPFR_RNDZ);//define euler
 	mpfr_set_str(pow, "0.3535533905932738", 10, MPFR_RNDZ);//define sqrt(2)/4
-	mpfr_log(ln1, n, MPFR_RNDZ);//ln1= log(n)
+	mpfr_log(ln1, num, MPFR_RNDZ);//ln1= log(n)
 	mpfr_log(ln2, ln1,MPFR_RNDZ);//ln2=log(ln1)
-	mpfr_mul(n, ln1, ln2, MPFR_RNDZ);//n=ln1*ln2
-	mpfr_sqrt(n, n, MPFR_RNDZ);//sqrt(n)
-	mpfr_pow (n, e, n, MPFR_RNDZ);//n=e^n
-	mpfr_pow (n, n, pow, MPFR_RNDZ);//n=n^pow
-	mpfr_get_z(result, n, MPFR_RNDZ);//se le asigna a result la parte entera de n
+	mpfr_mul(num, ln1, ln2, MPFR_RNDZ);//n=ln1*ln2
+	mpfr_sqrt(num, num, MPFR_RNDZ);//sqrt(n)
+	mpfr_pow (num, e, num, MPFR_RNDZ);//n=e^n
+	mpfr_pow (num, num, pow, MPFR_RNDZ);//n=n^pow
+	mpfr_get_z(result, num, MPFR_RNDZ);//se le asigna a result la parte entera de n
 	
 	mpfr_clear(ln1);
 	mpfr_clear(ln2);
 	mpfr_clear(e);
 	mpfr_clear(pow);
+	mpfr_clear(num);
 }
 
 /**
@@ -287,30 +278,33 @@ void longitudBase(mpfr_t n, mpz_t result){
  * @param n: numero que se le calcula el intervalo que necesita
  * @param result: variable que se ultiliza para devolver el resultado
  */
-void intervaloPolinomio(mpfr_t n, mpz_t result){
+void intervaloPolinomio(mpz_t n, mpz_t result){
 	//formuala: result = ((e^sqrt(ln(n)*ln(ln(n))))^(sqrt(2)/4))^3
-	mpfr_t ln1, ln2,e,pow;
+	mpfr_t num, ln1, ln2,e,pow;
 	
+	mpfr_init(num);
 	mpfr_init(ln1);
 	mpfr_init(ln2);
 	mpfr_init(e);
 	mpfr_init(pow);
 	
+	mpfr_set_z(num,n,MPFR_RNDZ);
 	mpfr_set_str(e, "2.71828182845904523536", 10, MPFR_RNDZ);//define euler
 	mpfr_set_str(pow, "0.3535533905932738", 10, MPFR_RNDZ);//define sqrt(2)/4
-	mpfr_log(ln1, n, MPFR_RNDZ);//ln1 = log(n)
+	mpfr_log(ln1, num, MPFR_RNDZ);//ln1 = log(n)
 	mpfr_log(ln2, ln1,MPFR_RNDZ);//ln2 = log(log(n))
-	mpfr_mul(n, ln1, ln2, MPFR_RNDZ);//n = ln1*ln1
-	mpfr_sqrt(n, n, MPFR_RNDZ);// n = sqrt(n)
-	mpfr_pow (n, e, n, MPFR_RNDZ);// n = e^n
-	mpfr_pow (n, n, pow, MPFR_RNDZ);// n = n^pow
-	mpfr_pow_si(n, n, 3, MPFR_RNDZ);//n = n^3
+	mpfr_mul(num, ln1, ln2, MPFR_RNDZ);//n = ln1*ln1
+	mpfr_sqrt(num, num, MPFR_RNDZ);// n = sqrt(n)
+	mpfr_pow (num, e, num, MPFR_RNDZ);// n = e^n
+	mpfr_pow (num, num, pow, MPFR_RNDZ);// n = n^pow
+	mpfr_pow_si(num, num, 3, MPFR_RNDZ);//n = n^3
 	//mpfr_out_str(stdout, 10, 0, n, MPFR_RNDZ);
-	mpfr_get_z(result, n, MPFR_RNDZ);//se le asigna a result la parte entera de n
+	mpfr_get_z(result, num, MPFR_RNDZ);//se le asigna a result la parte entera de n
 	mpfr_clear(ln1);
 	mpfr_clear(ln2);
 	mpfr_clear(e);
 	mpfr_clear(pow);
+	mpfr_clear(num);
 }
 
 /**
@@ -318,19 +312,24 @@ void intervaloPolinomio(mpfr_t n, mpz_t result){
  * @param n: Numero al que se le calculan los valores del polinomio
  * @param intervalo: Nos indica el rango en el que deben evaluarse los residuos del numero n
  */
-void polinomioFermat(mpz_t n, mpz_t intervalo, int numSuaves){
+void polinomioFermat(qs_struct qs_data){
 	//Q(Xi)=(sqrt(n)+i)^2-n
 	mpz_t raiz;//sqrt(n)
 	mpz_t limite;//limite del ciclo
 	mpz_t result;//resultados del polinomio
+	mpz_t intervalo;
+	int numSuaves;
 	
 	mpz_init(raiz);
 	mpz_init(limite);
 	mpz_init(result);
+	mpz_init(intervalo);
 	
-	mpz_set(limite,intervalo);//limite = intervalo
+	mpz_set(limite,qs_data.interval);//limite = intervalo
 	mpz_set_ui(intervalo,0);
-	mpz_sqrt(raiz,n);//raiz = sqrt(n)
+	mpz_sqrt(raiz,qs_data.n);//raiz = sqrt(n)
+	numSuaves = mpz_get_ui(qs_data.n_remainders);
+	numSuaves++;
 	//mpz_mul_si(intervalo,intervalo,-1);//intervalo = -1*intervalo
 	
 	FILE * fp;
@@ -352,13 +351,13 @@ void polinomioFermat(mpz_t n, mpz_t intervalo, int numSuaves){
 		//calcular resultado
 		mpz_add(result,raiz,intervalo);//result=raiz+intervalo
 		mpz_pow_ui(result,result,2);//result = result^2
-		mpz_sub(result,result,n);//result = result-n
+		mpz_sub(result,result,qs_data.n);//result = result-n
 		
 		//Si al validar el resultado da 1 se agrega al archivo polinomio
-		if(validarResultado(result)){
+		if(validarBSuave(result,qs_data)){
 			if(buscarSuave(result))continue;//si el numero del polinomio ya esta continua con el siguiente
 			numSuaves--;//se encontro un suave no repetido
-			agregarAVectorBlock();		
+			agregarAVectorBlock(qs_data);		
 			posFila++;
 			//agregar al archivo
 			memset(buf,0,BUFSIZ);
@@ -378,6 +377,7 @@ void polinomioFermat(mpz_t n, mpz_t intervalo, int numSuaves){
 		}
 	}
 	
+	mpz_clear(intervalo);
 	mpz_clear(raiz);
 	mpz_clear(limite);
 	mpz_clear(result);
@@ -409,9 +409,7 @@ int buscarSuave(mpz_t suave){
 			if(n==0)break;
 			mpz_init(numTemp);
 			mpz_set_str(numTemp,tokens[1],10);
-			free(tokens[0]);
-			free(tokens[1]);
-			free(tokens);
+			freeToken(tokens,n);
 			if(mpz_cmp(suave,numTemp)==0){
 				//printf("Colision");
 				bd=1;
@@ -487,26 +485,25 @@ void bloques(int n){
  * @brief Valida si un numero del polinomio se divide en la base de residuos
  * usando el metodo de los bloques, si el numero es liso se almacenan sus factores en un 
  * archivo
- * @param result: Numero que se valida si es divisible en la base
+ * @param bSuave: Numero que se valida si es divisible en la base
  * @return retorna 1 si es divisible en la base o 0 si no lo es
  */
- //TODO:Cambiar nombre parametro
-int validarResultado(mpz_t result){
+int validarBSuave(mpz_t bSuave,qs_struct qs_data){
 	
 	char buf[BUFSIZ];
-	mpz_t resultf;
-	mpz_init(resultf);//variable de resultado final
-	mpz_set(resultf,result);//resultf = result
+	mpz_t result;
+	mpz_init(result);//variable de resultado final
+	mpz_set(result,bSuave);//result = bSuave
 	//si el resultado es negativo se vuelve positivo
-	if(mpz_sgn(resultf)==-1)
-		mpz_mul_si(resultf,resultf,-1);
+	if(mpz_sgn(result)==-1)
+		mpz_mul_si(result,result,-1);
 
 	mpz_t valorB;//valor del bloque
 
 	mpz_t mcd;//valor del mcd
 	mpz_init(mcd);
 	
-	memset(block_table.data,0,(cPrimes+1)*sizeof(data_div));
+	memset(block_table.data,0,(mpz_get_ui(qs_data.n_remainders)+1)*sizeof(div_data));
 	FILE * fb;
 	fb = fopen("bloques.txt","r");
 	int contBloque = 0;
@@ -526,13 +523,13 @@ int validarResultado(mpz_t result){
 		mpz_init(mcdA);
 		
 		//se le asigna el valor de mcd a mcdA
-		mpz_gcd(mcd,resultf,valorB);
+		mpz_gcd(mcd,result,valorB);
 		mpz_set(mcdA,mcd);
 		int contGcda = 0;
 		
 		//TODO:Optimizar ciclo
 		do{
-			mpz_gcd(mcd,resultf,valorB);
+			mpz_gcd(mcd,result,valorB);
 			//si el maximo comun divisor cambia se guarda en un archivo temporal
 			if(mpz_cmp(mcd,mcdA)!=0){
 				//Se almacena en una estructura el gcd
@@ -551,21 +548,22 @@ int validarResultado(mpz_t result){
 				break;
 			}
 			
-			mpz_divexact(resultf,resultf,mcd);
+			mpz_divexact(result,result,mcd);
 		}while(mpz_cmp_ui(mcd,1)!=0);
 		
 		mpz_clear(valorB);
 		mpz_clear(mcdA);
 	}
+	block_table.n_values = i+1;
 	fclose(fb);
 	mpz_clear(mcd);
-	if(mpz_cmp_ui(resultf,1)==0){
-		mpz_clear(resultf);
+	if(mpz_cmp_ui(result,1)==0){
+		mpz_clear(result);
 		//mpz_out_str(stdout,10,result);
 		//printf("\n");
 		return 1;
 	}
-	mpz_clear(resultf);
+	mpz_clear(result);
 	return 0;
 }
 
@@ -574,25 +572,10 @@ int validarResultado(mpz_t result){
  * @param 
  * @return
  */
-void agregarAVectorBlock(){
-	//TODO:Cambiar estrucura y quitar lectura del archivo, la estructura ya guarda bien la informacion
+void agregarAVectorBlock(qs_struct qs_data){
 	int i = 0;
-	/*if(posFila==105){
-		while(block_table.data[i].gcd!=0){
-			int contV = block_table.data[i].periodo;//cliclos que se repite el mcd
-			int block = block_table.data[i].block;//bloque en el que esta el mcd
-			int mcdE = block_table.data[i].gcd;
-			i++;
-			printf("periodo:%d, bloque:%d, gcd:%d\n",contV,block,mcdE);
-		}
-	}
-	i=0;*/
-	//TODO:cambiar condicion del while
-	while(block_table.data[i].gcd!=0){
-		/*if(posFila==105){
-			printf("i=%d\n",i);	
-			printf("%d,%d,%d\n",block_table.data[i].gcd,block_table.data[i].periodo,block_table.data[i].block);
-		}*/
+	for (i = 0; i < block_table.n_values; i++)
+	{
 		FILE * fblocks;
 		fblocks = fopen("bloquesFac.txt","r");
 	
@@ -603,14 +586,14 @@ void agregarAVectorBlock(){
 		int contV = block_table.data[i].periodo;//cliclos que se repite el mcd
 		int block = block_table.data[i].block;//bloque en el que esta el mcd
 		//int mcdE = block_table.data[i].gcd;
-		i++;
+		//i++;
 		//TODO: arreglar ciclo
 		//si los periodos son pares se ingresan ceros
 		if((contV%2)==0){
 			//printf("fila:%d Block:%d mcd:%d par\n",posFila,block,mcdE);
-			for (int i = 0; i < n_block; i++)
+			for (int i = 0; i < qs_data.blocks.n_blocks; i++)
 			{
-				insertarNumero(posFila,(block-1)*n_block+i,0);
+				insertarNumero(&qs_data.mat,posFila,(block-1)*qs_data.blocks.n_blocks+i,0);
 			}
 			continue;
 		}
@@ -636,12 +619,12 @@ void agregarAVectorBlock(){
 						fflush(stdout);
 					}*/
 					if(mpz_divisible_ui_p(mcd,nblock)){
-						insertarNumero(posFila,(block-1)*n_block+i,contV%2);
+						insertarNumero(&qs_data.mat,posFila,(block-1)*qs_data.blocks.n_blocks+i,contV%2);
 					}else{
-						insertarNumero(posFila,(block-1)*n_block+i,0);
+						insertarNumero(&qs_data.mat,posFila,(block-1)*qs_data.blocks.n_blocks+i,0);
 					}
 				}
-				free(tokens2);
+				freeToken(tokens2,n2);
 			}
 		}
 		
@@ -658,30 +641,38 @@ void agregarAVectorBlock(){
 	}
 }
 
-void insertarNumero(int fila, int columna, int valor){
+void insertarNumero(matrix * matriz, int posFila, int posColumna, int valor){
 	
-	/*if(fila==105){
-		printf("Fila:%d Columna:%d Valor:%d\n",fila,columna,valor);
-		printf("Fila:%d Columna:%d Valor:%d\n",fila,columna,matriz[fila][columna]);
-	}
-	fflush(stdout);*/
-	if(matriz[fila][columna] == 0 && valor == 0){
-		matriz[fila][columna] = 0;
+	//printf("Fila:%d Columna:%d Valor:%d\n",posFila,posColumna,valor);
+	//printf("Fila:%d Columna:%d Valor:%d\n",fila,columna,matriz[fila][columna]);
+	//fflush(stdout);
+	
+	if(matriz->data[posFila][posColumna] == 0 && valor == 0){
+		matriz->data[posFila][posColumna] = 0;
 		return;
 	}
 	
-	if(matriz[fila][columna] == 1 && valor == 1){
-		matriz[fila][columna] = 0;
+	if(matriz->data[posFila][posColumna] == 1 && valor == 1){
+		matriz->data[posFila][posColumna] = 0;
 		return;
 	}
 	
-	if(matriz[fila][columna] == 0 && valor == 1){
-		matriz[fila][columna] = 1;
+	if(matriz->data[posFila][posColumna] == 0 && valor == 1){
+		matriz->data[posFila][posColumna] = 1;
 		return;
 	}
 	
-	if(matriz[fila][columna] == 1 && valor == 0){
-		matriz[fila][columna] = 1;
+	if(matriz->data[posFila][posColumna] == 1 && valor == 0){
+		matriz->data[posFila][posColumna] = 1;
 		return;
 	}
+}
+
+void freeToken(char ** token, int n){
+	int i;
+	for (i = 0; i < n; i++)
+	{
+		free(token[i]);
+	}
+	free(token);
 }
