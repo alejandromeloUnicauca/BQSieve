@@ -35,7 +35,7 @@ typedef struct{
   */
 typedef struct{
 	/**factores del numero prod_factores*/
-	mpz_t * factors;
+	mpz_t ** factors;
 	/**multiplicacion de todos los factores*/
 	mpz_t prod_factors;
 	/**cantidad de factores*/
@@ -48,7 +48,7 @@ typedef struct{
   */
 typedef struct{
 	/**array de bloques*/
-	remainders_block * blocks;
+	remainders_block * block;
 	/**cantidad de bloques*/
 	int n_blocks;
 }blocks_table;
@@ -59,10 +59,14 @@ typedef struct{
 	int n_cols;
 }matrix;
 
+/**
+ * @brief estructura que contiene los datos necesarios para factorizar
+ * un numero n
+ * */
 typedef struct{
 	blocks_table blocks; 
+	int n_BSuaves;
 	mpz_t n_remainders;
-	div_data_table blocks_data;
 	matrix mat;
 	mpz_t n;
 	mpz_t interval;
