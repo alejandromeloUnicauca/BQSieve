@@ -634,9 +634,9 @@ void agregarAVectorBlock(qs_struct qs_data){
 						fflush(stdout);
 					}*/
 					if(mpz_divisible_ui_p(mcd,nblock)){
-						insertarNumero(&qs_data.mat,qs_data.n_BSuaves,(block-1)*qs_data.blocks.block[block-1].n_factors+i,contV%2);
+						insertarNumero(&qs_data.mat,qs_data.n_BSuaves,(block-1)*qs_data.blocks.block[0].n_factors+i,contV%2);
 					}else{
-						insertarNumero(&qs_data.mat,qs_data.n_BSuaves,(block-1)*qs_data.blocks.block[block-1].n_factors+i,0);
+						insertarNumero(&qs_data.mat,qs_data.n_BSuaves,(block-1)*qs_data.blocks.block[0].n_factors+i,0);
 					}
 				}
 				freeToken(tokens2,n2);
