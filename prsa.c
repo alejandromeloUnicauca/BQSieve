@@ -32,6 +32,7 @@ int **matriz;
 int posFila = 0;//pos fila matriz
 int i_long;
 data_divT *data_d;
+
 int main(int argc, char * argv[]){	
 	//TODO: obtimizar y comentar
 	if(argc != 2){
