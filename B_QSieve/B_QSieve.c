@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "structsqs.h"
+#include "sieve.h"
 #include <time.h>
 
 void createBlocks(int n, qs_struct * qs_data);
@@ -18,7 +19,7 @@ void usage();
 
 int main(int argc, char **argv)
 {
-	int flagd = 0;
+	int flagd = 0; 
 	int flagh = 0;
 	char *hdvalue = NULL;
 	char *bvalue = NULL;
@@ -78,6 +79,7 @@ int main(int argc, char **argv)
 	//Instancia de variables
 	mpz_inits(qs_data.n,qs_data.interval_length,NULL);
 	if(bvalue!=NULL)qs_data.blocks.length = atol(bvalue);
+	else qs_data.blocks.length = 0;
 	
 	//si se usa el flag -d se asigna un numero decimal 
 	//si se usa el flag -h se asigna un numero hexadecimal
@@ -134,12 +136,26 @@ int main(int argc, char **argv)
 		printf("Creando bloques...\n");
 		printf("Bloques creados: %ld\n",qs_data.blocks.length);
 		double segundos = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;
-		printf("tiempo de creacion de los bloques:%fs\n",segundos);
+		printf("tiempo de creacion de los bloques:%fs\n",segundos);	
 	}
 	
+	long lengthXi = 0;
+	long *Xi = sieving(&qs_data,&lengthXi);
+	
+	FILE * fp;//file residuos
+	if((fp = fopen("poli.txt","w")) == NULL){
+		perror("fopen");
+		exit(EXIT_FAILURE);
+	}
+	
+	for (long i = 0; i < lengthXi ; i++)
+	{
+		fprintf(fp,"%ld\n",Xi[i]);
+	}
+	fclose(fp);
 	
 	//Liberar Memoria
-	freeStruct(&qs_data);
+	freeStruct(&qs_data); 
 	
 	return 1;
 }
@@ -152,7 +168,6 @@ int main(int argc, char **argv)
  */
 void createBlocks(int n, qs_struct * qs_data){
 	//TODO:cambiar bloques por punteros a base
-	
 	//reservo memoria para el array de bloques
 	qs_data->blocks.block = (prime_block*)malloc((qs_data->blocks.length)*sizeof(prime_block));
 	
@@ -210,20 +225,24 @@ void freeStruct(qs_struct * qs_data){
 	
 	free(qs_data->base.primes);
 	
-	for (int i = 0; i < qs_data->blocks.length ; i++)
-	{
-		//printf("Bloque %d:",i);
-		for (int j = 0; j < qs_data->blocks.block[i].length; j++)
+	
+	//TODO:validar si se crearon bloques
+	if(qs_data->blocks.length > 0){
+		for (int i = 0; i < qs_data->blocks.length ; i++)
 		{
-			//gmp_printf("%Zd,",qs_data->blocks.block[i].factors[j].value);
-			mpz_clear(qs_data->blocks.block[i].factors[j].value);
+			//printf("Bloque %d:",i);
+			for (int j = 0; j < qs_data->blocks.block[i].length; j++)
+			{
+				//gmp_printf("%Zd,",qs_data->blocks.block[i].factors[j].value);
+				mpz_clear(qs_data->blocks.block[i].factors[j].value);
+			}
+			//gmp_printf("%Zd,",qs_data->blocks.block[i].prod_factors);
+			//printf("\n");
+			mpz_clear(qs_data->blocks.block[i].prod_factors);
+			free(qs_data->blocks.block[i].factors);
 		}
-		//gmp_printf("%Zd,",qs_data->blocks.block[i].prod_factors);
-		//printf("\n");
-		mpz_clear(qs_data->blocks.block[i].prod_factors);
-		free(qs_data->blocks.block[i].factors);
+		free(qs_data->blocks.block);
 	}
-	free(qs_data->blocks.block);
 	
 	mpz_clears(qs_data->n,qs_data->interval_length,NULL);
 }
@@ -282,6 +301,7 @@ int generatePrimesBase(mpz_t n, long base_length, prime * primes){
 				mpfr_init(pTemp);
 				mpfr_set_z(pTemp,p,MPFR_RNDZ);
 				mpfr_log(primes[contRes].log_value, pTemp, MPFR_RNDZ);//ln(p)
+				primes[contRes].llog_value = mpfr_get_ui(primes[contRes].log_value,MPFR_RNDZ);
 				
 				mpfr_clear(pTemp);
 				if((fr = fopen("residuos.txt","a"))==NULL){
@@ -370,7 +390,7 @@ void getIntervalLength(mpz_t n, mpz_t result){
 }
 
 void usage(){
-	fprintf(stderr,"Uso: ./B_QSieve (-d | -h) <N> [-b (<NBLOCKS>)] \n");
+	fprintf(stderr,"Uso: ./B_QSieve (-d | -h) <N> [-b <NBLOCKS>] \n");
 	fprintf(stderr,"Opciones:\n");
 	fprintf(stderr,"-d	# Especifica que el numero N es decimal\n");
 	fprintf(stderr,"-h	# Especifica que el numero N es hexadecimal\n");

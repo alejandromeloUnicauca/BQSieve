@@ -36,6 +36,7 @@ typedef struct{
 typedef struct{
 	mpz_t value;
 	mpfr_t log_value;
+	unsigned long llog_value;
 }prime;
 
  /**
@@ -79,7 +80,7 @@ typedef struct{
  * */
 typedef struct{
 	blocks_table blocks; 
-	int n_BSuaves;
+	long n_BSuaves;
 	/***/
 	primes_base base;
 	/**estrucura para almacenar los vectores exponentes*/
