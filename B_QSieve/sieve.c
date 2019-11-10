@@ -131,8 +131,11 @@ int shanksTonelli(mpz_t n, mpz_t p, mpz_t r1, mpz_t r2) {
 			mpz_powm_ui(t,t,1,p);
 
 			mpz_set(m,i);
+			mpz_clears(i,zz,m1,b,e,NULL);
 		}
+		mpz_clears(c,r,t,m,z,NULL);
 	}
+	mpz_clears(resMod,p1,div,q,ss,NULL);
 	return 1;
 }
 
@@ -143,7 +146,7 @@ int shanksTonelli(mpz_t n, mpz_t p, mpz_t r1, mpz_t r2) {
 */
 double * sievingNaiveNegative(qs_struct * qs_data){
 	
-	long intervalo = mpz_get_ui(qs_data->interval_length);
+	long intervalo = mpz_get_ui(qs_data->intervalo.length);
 	double *S = (double*) malloc(intervalo*sizeof(double));
 	memset(S,0,sizeof(double)*intervalo);
 	
@@ -189,7 +192,7 @@ double * sievingNaiveNegative(qs_struct * qs_data){
 		mpz_set(d1,x2);
 		mpz_sub(d2,p,d1);
 
-		mpz_sub(Mp,qs_data->interval_length,d1);
+		mpz_sub(Mp,qs_data->intervalo.length,d1);
 		
 		//gmp_printf("p:%Zd, x1:%Zd, x2:%Zd, d1:%Zd, d2:%Zd, Mp:%Zd\n",qs_data->base.primes[i].value,x1,x2,d1,d2,Mp);
 		
@@ -208,7 +211,7 @@ double * sievingNaiveNegative(qs_struct * qs_data){
 			mpz_sub(x,x,d2);
 		}
 		
-		if(mpz_cmp(x,qs_data->interval_length) == 1){	
+		if(mpz_cmp(x,qs_data->intervalo.length) == 1){	
 			S[mpz_get_ui(x)] = S[mpz_get_ui(x)] + logp;
 		}
 		
@@ -222,7 +225,7 @@ double * sievingNaiveNegative(qs_struct * qs_data){
 	
 	mpfr_mul_z(T,T,qs_data->n,MPFR_RNDZ);
 	mpfr_sqrt(T,T,MPFR_RNDZ);
-	mpfr_mul_z(T,T,qs_data->interval_length,MPFR_RNDZ);
+	mpfr_mul_z(T,T,qs_data->intervalo.length,MPFR_RNDZ);
 	mpfr_log(T, T, MPFR_RNDZ);
 	mpfr_printf ("T:%.2Rf\n", T);
 	
@@ -234,11 +237,11 @@ double * sievingNaiveNegative(qs_struct * qs_data){
 /** 
 * @brief 
 * @param qs_data: 
-* @return 
+* @return Retorna un array con los numeros Xi que tienen almenos 1 factor de la base
 */
 double * sievingNaivePositive(qs_struct * qs_data){
 	
-	long intervalo = mpz_get_ui(qs_data->interval_length);
+	long intervalo = mpz_get_ui(qs_data->intervalo.length);
 	double *S = (double*) malloc(intervalo*sizeof(double));
 	memset(S,0,sizeof(double)*intervalo);
 	mpz_t n,raizn;
@@ -283,7 +286,7 @@ double * sievingNaivePositive(qs_struct * qs_data){
 		mpz_set(d1,x2);
 		mpz_sub(d2,p,d1);
 
-		mpz_sub(Mp,qs_data->interval_length,d1);
+		mpz_sub(Mp,qs_data->intervalo.length,d1);
 		
 		//gmp_printf("p:%Zd, x1:%Zd, x2:%Zd, d1:%Zd, d2:%Zd, Mp:%Zd\n",qs_data->base.primes[i].value,x1,x2,d1,d2,Mp);
 		
@@ -298,7 +301,7 @@ double * sievingNaivePositive(qs_struct * qs_data){
 			mpz_add(x,x,d2);
 		}
 		
-		if(mpz_cmp(x,qs_data->interval_length) == -1){	
+		if(mpz_cmp(x,qs_data->intervalo.length) == -1){	
 			S[mpz_get_ui(x)] = S[mpz_get_ui(x)] + logp;
 		}
 		
@@ -312,7 +315,7 @@ double * sievingNaivePositive(qs_struct * qs_data){
 	
 	mpfr_mul_z(T,T,qs_data->n,MPFR_RNDZ);
 	mpfr_sqrt(T,T,MPFR_RNDZ);
-	mpfr_mul_z(T,T,qs_data->interval_length,MPFR_RNDZ);
+	mpfr_mul_z(T,T,qs_data->intervalo.length,MPFR_RNDZ);
 	mpfr_log(T, T, MPFR_RNDZ);
 	mpfr_printf ("T:%.2Rf\n", T);
 	mpfr_clear(T);
@@ -328,10 +331,10 @@ double * sievingNaivePositive(qs_struct * qs_data){
 * @return 
 */
 long * sieving(qs_struct * qs_data, long *length){
-	
+	//TODO:Arreglar el tamaño del array Xi
 	double *sp = sievingNaivePositive(qs_data);
 	double *sn = sievingNaiveNegative(qs_data);
-	long intervalLength = mpz_get_ui(qs_data->interval_length);
+	long intervalLength = mpz_get_ui(qs_data->intervalo.length);
 	long * Xi = (long*)malloc((intervalLength*2)*sizeof(long));
 	long contXi=0;
 	
@@ -358,7 +361,7 @@ long * sieving(qs_struct * qs_data, long *length){
 	
 	free(sp);
 	free(sn);
-	
+	mpz_clear(raizn);
 	return Xi;
 }
 

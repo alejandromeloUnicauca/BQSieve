@@ -60,7 +60,7 @@ typedef struct{
 	/**array de bloques*/
 	prime_block * block;
 	/**cantidad de bloques*/
-	long length;
+	unsigned long length;
 }blocks_table;
 
 typedef struct{
@@ -74,12 +74,24 @@ typedef struct{
 	long length;
 }primes_base;
 
+typedef struct{
+	long * Xi;
+	/**Tamaño del array Xi*/
+	unsigned long length_Xi;
+	mpz_t * Qxi;
+	/**Tamaño del array Qxi*/
+	unsigned long length_Qxi;
+	/**Tamaño del invervalo*/
+	mpz_t length;
+}interval;
+
 /**
  * @brief estructura que contiene los datos necesarios para factorizar
  * un numero n
  * */
 typedef struct{
 	blocks_table blocks; 
+	//TODO:crear estructira para los numeros BSuaves
 	long n_BSuaves;
 	/***/
 	primes_base base;
@@ -88,7 +100,7 @@ typedef struct{
 	/**Numero que se va factorizar*/
 	mpz_t n;
 	/**longitud del intervalo positivo*/
-	mpz_t interval_length;
+	interval intervalo;
 }qs_struct;
 
 //divisiones sucesivas

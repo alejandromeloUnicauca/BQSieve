@@ -8,9 +8,13 @@
 #include <string.h>
 #include "structsqs.h"
 #include "sieve.h"
+#include "polynomial.h"
+#include "factoring.h"
 #include <time.h>
 
 void createBlocks(int n, qs_struct * qs_data);
+void crearMatrizNula(qs_struct * qs_data);
+void imprimirMatriz(matrix matriz);  
 void getPrimesBaseLength(mpz_t n, long * result);
 void getIntervalLength(mpz_t n, mpz_t result);
 int generatePrimesBase(mpz_t n, long base_length, prime * primes);
@@ -77,9 +81,11 @@ int main(int argc, char **argv)
 	clock_t t_inicio, t_final;
 	
 	//Instancia de variables
-	mpz_inits(qs_data.n,qs_data.interval_length,NULL);
+	qs_data.n_BSuaves = 0;   
+	mpz_inits(qs_data.n,qs_data.intervalo.length,NULL);
 	if(bvalue!=NULL)qs_data.blocks.length = atol(bvalue);
 	else qs_data.blocks.length = 0;
+	
 	
 	//si se usa el flag -d se asigna un numero decimal 
 	//si se usa el flag -h se asigna un numero hexadecimal
@@ -112,8 +118,8 @@ int main(int argc, char **argv)
 	printf("Longitud de la base de primos:%ld\n", qs_data.base.length);
 	
 	//Intervalo del polinomio
-	getIntervalLength(qs_data.n,qs_data.interval_length);
-	gmp_printf("Intervalo del polinomio:%Zd\n", qs_data.interval_length);
+	getIntervalLength(qs_data.n,qs_data.intervalo.length);
+	gmp_printf("Intervalo del polinomio:%ld\n", qs_data.intervalo.length);
 	
 	//Generar base de primos
 	qs_data.base.primes = (prime*)malloc((qs_data.base.length)*sizeof(prime));
@@ -139,27 +145,90 @@ int main(int argc, char **argv)
 		printf("tiempo de creacion de los bloques:%fs\n",segundos);	
 	}
 	
+	//TODO:Optimizar criba y calculo del polinomio
+	//TODO:Arreglar paso de parametros
 	long lengthXi = 0;
-	long *Xi = sieving(&qs_data,&lengthXi);
 	
-	FILE * fp;//file residuos
-	if((fp = fopen("poli.txt","w")) == NULL){
-		perror("fopen");
-		exit(EXIT_FAILURE);
-	}
+	printf("Cribando...\n");
+	t_inicio = clock();
+	long *Xi = sieving(&qs_data,&lengthXi); 
+	t_final = clock();
+	double segundosCriba = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;
+	printf("tiempo de cribado:%fs\n",segundos);	
 	
-	for (long i = 0; i < lengthXi ; i++)
-	{
-		fprintf(fp,"%ld\n",Xi[i]);
-	}
-	fclose(fp);
 	
+	qs_data.intervalo.length_Xi = lengthXi;
+	qs_data.intervalo.Xi = Xi;
+	
+	printf("Calculando Polinomio...\n");
+	t_inicio = clock();
+	fermat(&qs_data); 
+	t_final = clock();
+	double segundosPolinomio = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;
+	printf("tiempo de calculo del polinomio:%fs\n",segundos);	
+	
+	crearMatrizNula(&qs_data); 
+	
+	printf("Factorizando...\n");
+	t_inicio = clock();
+	factoringTrial(&qs_data);  
+	t_final = clock();
+	double segundosFactorizacion = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;
+	printf("tiempo de factorizacion:%fs\n",segundos);	
+	printf("tiempo de Total:%fs\n",segundosCriba+segundosPolinomio+segundosFactorizacion);	
+	imprimirMatriz(qs_data.mat);
 	//Liberar Memoria
 	freeStruct(&qs_data); 
 	
 	return 1;
 }
 
+/**
+ * @brief imprime los datos de la matriz
+ * @param matriz: estructura que contiene la matriz
+ */
+void imprimirMatriz(matrix matriz){
+	FILE* f = fopen("matrix.txt","w");
+	//printf("%d %d\n",matriz.n_rows, matriz.n_cols);
+	fprintf(f,"%d %d\n",matriz.n_rows, matriz.n_cols);
+	int v[matriz.n_cols];
+	int cont;
+	for (int i = 0; i < matriz.n_rows; i++)
+	{
+		cont = 0;
+		for (int j = 0; j < matriz.n_cols; j++)
+		{
+			printf("%d ",matriz.data[i][j]);
+			if(matriz.data[i][j]==1){
+				v[cont] = j;
+				cont++;
+			}
+		}
+		fprintf(f,"%d ",cont);
+		for (int k = 0; k < cont; k++)
+		{
+			fprintf(f,"%d ",v[k]);
+		}
+		printf("\n");	
+		fprintf(f,"\n");
+	}
+	
+	fclose(f);
+}
+
+void crearMatrizNula(qs_struct * qs_data){
+	qs_data->mat.n_rows = qs_data->base.length+1;
+	qs_data->mat.n_cols = qs_data->base.length;
+	
+	//reservar memoria para matriz
+	qs_data->mat.data = (int**)malloc(qs_data->mat.n_rows*sizeof(int*));
+	   
+	for (int i = 0; i < qs_data->mat.n_rows; i++) 
+	{
+		qs_data->mat.data[i] = (int*)malloc(qs_data->mat.n_cols*sizeof(int));
+		memset(qs_data->mat.data[i],0,5*sizeof(int));
+	}
+}
 
 /**
  * @brief crea un archivo bloques.txt donde se almacena la multiplicacion
@@ -223,9 +292,8 @@ void freeStruct(qs_struct * qs_data){
 		mpfr_clear(qs_data->base.primes[i].log_value);
 	}
 	
-	free(qs_data->base.primes);
-	
-	
+	free(qs_data->base.primes); 	
+		
 	//TODO:validar si se crearon bloques
 	if(qs_data->blocks.length > 0){
 		for (int i = 0; i < qs_data->blocks.length ; i++)
@@ -244,7 +312,15 @@ void freeStruct(qs_struct * qs_data){
 		free(qs_data->blocks.block);
 	}
 	
-	mpz_clears(qs_data->n,qs_data->interval_length,NULL);
+	mpz_clears(qs_data->n,qs_data->intervalo.length,NULL);
+	
+	for (long i = 0; i < qs_data->intervalo.length_Qxi; i++)
+	{
+		mpz_clear(qs_data->intervalo.Qxi[i]);
+	}
+	 
+	free(qs_data->intervalo.Qxi);
+	free(qs_data->intervalo.Xi);
 }
 
 
@@ -341,7 +417,7 @@ void getPrimesBaseLength(mpz_t n, long * result){
 	mpfr_t num, ln1, ln2, e, pow;
 	
 	//inicializacion de variables
-	mpfr_inits(ln1,ln2,e,pow,num,NULL);
+	mpfr_inits(num,ln1,ln2,e,pow,NULL);
 
 	mpfr_set_z(num,n,MPFR_RNDZ);
 	mpfr_set_str(e, "2.71828182845904523536", 10, MPFR_RNDZ);//define euler
@@ -355,7 +431,7 @@ void getPrimesBaseLength(mpz_t n, long * result){
 	//mpfr_get_z(result, num, MPFR_RNDZ);//se le asigna a result la parte entera de num
 	
 	*result = mpfr_get_ui(num,MPFR_RNDZ);
-	mpfr_clears(ln1,ln2,e,pow,num,NULL);
+	mpfr_clears(num,ln1,ln2,e,pow,NULL);
 }
 
 /**
