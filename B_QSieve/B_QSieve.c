@@ -284,6 +284,7 @@ void createBlocks(int n, qs_struct * qs_data){
 
 void freeStruct(qs_struct * qs_data){
 	
+	//liberar memoria de la base
 	for (int i = 0; i < qs_data->base.length; i++)
 	{
 		//gmp_printf("P:%Zd",qs_data->base.primes[i].value);
@@ -293,7 +294,8 @@ void freeStruct(qs_struct * qs_data){
 	}
 	
 	free(qs_data->base.primes); 	
-		
+	
+	//liberar memoria de los bloques
 	//TODO:validar si se crearon bloques
 	if(qs_data->blocks.length > 0){
 		for (int i = 0; i < qs_data->blocks.length ; i++)
@@ -312,6 +314,7 @@ void freeStruct(qs_struct * qs_data){
 		free(qs_data->blocks.block);
 	}
 	
+	//liberar memoria del intervalo
 	mpz_clears(qs_data->n,qs_data->intervalo.length,NULL);
 	
 	for (long i = 0; i < qs_data->intervalo.length_Qxi; i++)
@@ -321,6 +324,15 @@ void freeStruct(qs_struct * qs_data){
 	 
 	free(qs_data->intervalo.Qxi);
 	free(qs_data->intervalo.Xi);
+	
+	//liberar memoria de la matriz
+	   
+	for (int i = 0; i < qs_data->mat.n_rows; i++) 
+	{
+		free(qs_data->mat.data[i]);
+	}
+	
+	free(qs_data->mat.data);
 }
 
 
