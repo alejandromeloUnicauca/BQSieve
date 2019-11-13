@@ -136,10 +136,10 @@ int main(int argc, char **argv)
 	//Crear bloques de la base
 	if(qs_data.blocks.length > 0){
 		int blockLength = ceil((float)qs_data.base.length/qs_data.blocks.length);
+		printf("Creando bloques...\n");
 		t_inicio = clock();
 		createBlocks(blockLength,&qs_data);
 		t_final = clock();
-		printf("Creando bloques...\n");
 		printf("Bloques creados: %ld\n",qs_data.blocks.length);
 		double segundos = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;
 		printf("tiempo de creacion de los bloques:%fs\n",segundos);	
@@ -154,7 +154,7 @@ int main(int argc, char **argv)
 	long *Xi = sieving(&qs_data,&lengthXi); 
 	t_final = clock();
 	double segundosCriba = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;
-	printf("tiempo de cribado:%fs\n",segundos);	
+	printf("tiempo de cribado:%fs\n",segundosCriba);	
 	
 	
 	qs_data.intervalo.length_Xi = lengthXi;
@@ -165,18 +165,28 @@ int main(int argc, char **argv)
 	fermat(&qs_data); 
 	t_final = clock();
 	double segundosPolinomio = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;
-	printf("tiempo de calculo del polinomio:%fs\n",segundos);	
+	printf("tiempo de calculo del polinomio:%fs\n",segundosPolinomio);	
 	
 	crearMatrizNula(&qs_data); 
 	
+	
 	printf("Factorizando...\n");
 	t_inicio = clock();
-	factoringTrial(&qs_data);  
+	if(qs_data.blocks.length > 0){
+		factoringBlocks(&qs_data);
+	}
+	else{
+		factoringTrial(&qs_data);  
+	}
 	t_final = clock();
 	double segundosFactorizacion = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;
-	printf("tiempo de factorizacion:%fs\n",segundos);	
+	printf("tiempo de factorizacion:%fs\n",segundosFactorizacion);	
+	
 	printf("tiempo de Total:%fs\n",segundosCriba+segundosPolinomio+segundosFactorizacion);	
+	
+	printf("Escribiendo matriz...");
 	imprimirMatriz(qs_data.mat);
+	
 	//Liberar Memoria
 	freeStruct(&qs_data); 
 	
@@ -198,7 +208,7 @@ void imprimirMatriz(matrix matriz){
 		cont = 0;
 		for (int j = 0; j < matriz.n_cols; j++)
 		{
-			printf("%d ",matriz.data[i][j]);
+			//printf("%d ",matriz.data[i][j]);
 			if(matriz.data[i][j]==1){
 				v[cont] = j;
 				cont++;
@@ -209,7 +219,7 @@ void imprimirMatriz(matrix matriz){
 		{
 			fprintf(f,"%d ",v[k]);
 		}
-		printf("\n");	
+		//printf("\n");	
 		fprintf(f,"\n");
 	}
 	
@@ -240,13 +250,14 @@ void createBlocks(int n, qs_struct * qs_data){
 	//reservo memoria para el array de bloques
 	qs_data->blocks.block = (prime_block*)malloc((qs_data->blocks.length)*sizeof(prime_block));
 	
+	
 	//reservo memoria para cada bloque
 	for(int i = 0; i < qs_data->blocks.length; i++)
 	{
 		qs_data->blocks.block[i].factors = (prime*)malloc(n*sizeof(prime));//reservo memoria para n factores
 		//printf("%x\n",qs_data->blocks.block[i].factors);
 	}
-	
+		
 	mpz_t mulTemp;//variable multiplicacion de bloques
 	mpz_init(mulTemp);
 	mpz_set_ui(mulTemp,1);
@@ -255,6 +266,7 @@ void createBlocks(int n, qs_struct * qs_data){
 	//esta almacenada en la estructura
 	int contBlock = 0;
 	int contFact = 0;
+	
 	for (int i = 0; i < qs_data->base.length; i++)
 	{
 		//si el blo1ue se llena avanzo al siguiente
@@ -268,16 +280,18 @@ void createBlocks(int n, qs_struct * qs_data){
 			contBlock++;
 			contFact = 0;
 		}
-		
+		//TODO:cambiar value de factors por puntero
 		mpz_init(qs_data->blocks.block[contBlock].factors[contFact].value);
 		mpz_set(qs_data->blocks.block[contBlock].factors[contFact].value,qs_data->base.primes[i].value);
 		mpz_mul(mulTemp,mulTemp,qs_data->base.primes[i].value);
 		//gmp_printf("%Zd,",qs_data->blocks.block[contBlock].factors[contFact].value);
 		contFact++;
 	}
+	
 	//asigno el tamaño del ultimo bloque y el la
 	//multiplicacion de los facotores del ultimo bloque
 	qs_data->blocks.block[contBlock].length = contFact;
+	mpz_init(qs_data->blocks.block[contBlock].prod_factors);
 	mpz_set(qs_data->blocks.block[contBlock].prod_factors,mulTemp);
 	mpz_clear(mulTemp);
 }

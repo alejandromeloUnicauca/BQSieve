@@ -1,5 +1,10 @@
 #!/bin/bash	
-./B_QSieve -d "$1"
+if [[ "$1" == "-h" ]];then
+	num=$(echo "ibase=16;obase=10; $2" | bc);
+else
+	num=$2;
+fi
+./B_QSieve "$1" "$num" "$3" "$4"
 wait
 /home/ingesis/cado-nfs-2.3.0/cado-nfs-2.3.0/build/debian9/linalg/bwc/mf_scan --ascii-in mfile=matrix.txt --binary-out ofile=matrix.bin --freq
 wait
@@ -13,8 +18,7 @@ cp /tmp/c60/c60.bwc/K.sols0-64.0.txt /home/ingesis/prsa/B_QSieve/.
 wait
 ./readKsol.sh K.sols0-64.0.txt > vec.txt
 wait
-./productPoli.sh "$1"
-
+./productPoli.sh "$num"
 
 
 
