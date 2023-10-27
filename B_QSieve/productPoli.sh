@@ -4,7 +4,7 @@ prod=1
 filas=$(wc -l vec.txt | cut -d' ' -f1);
 echo "$filas"
 i=1
-while [ "$i" -le 5 ];
+while [ "$i" -le 64 ];
 do
 	rm salida.txt pos.txt
 	#echo "$i"
@@ -18,6 +18,11 @@ do
 		fi
 	done 3<polinomio.txt 2<vec.txt
 	./mulPoli "$1" >> salidap.txt;
+	exit_status=$?;
 	wait;
+	if [[ "$exit_status" == "0" ]];then
+		
+		break;
+	fi
 	i=$((i+1))
 done

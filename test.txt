@@ -1,0 +1,11 @@
+Numero de digitos: 20
+Longitud de la base:95
+intervalo del polinomio: 871241
+Generando residuos cuadraticos...
+Se usaron 211 primos
+95 residuos generados en residuos.txt
+tiempo de calculo de residuos:0.002428s
+Creando bloques...
+Bloques creados: 5
+Calculando polinomio de Fermat con reduccion por bloques
+tiempo de calculo del polinomio:7.186364s

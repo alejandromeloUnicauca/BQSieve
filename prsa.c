@@ -124,7 +124,7 @@ void crearMatrizNula(int filas, int columnas){
 
 void imprimirMatriz(int filas, int columnas){
 	FILE* f = fopen("matrix.txt","w");
-	printf("%d %d\n",filas, columnas);
+	//printf("%d %d\n",filas, columnas);
 	fprintf(f,"%d %d\n",filas,columnas);
 	int v[columnas];
 	int cont;
@@ -133,7 +133,7 @@ void imprimirMatriz(int filas, int columnas){
 		cont = 0;
 		for (int j = 0; j < columnas; j++)
 		{
-			printf("%d ",matriz[i][j]);
+			//printf("%d ",matriz[i][j]);
 			if(matriz[i][j]==1){
 				v[cont] = j;
 				cont++;
@@ -144,7 +144,7 @@ void imprimirMatriz(int filas, int columnas){
 		{
 			fprintf(f,"%d ",v[k]);
 		}
-		printf("\n");	
+		//printf("\n");	
 		fprintf(f,"\n");
 	}
 	

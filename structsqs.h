@@ -35,7 +35,7 @@ typedef struct{
   */
 typedef struct{
 	/**factores del numero prod_factores*/
-	mpz_t ** factors;
+	mpz_t * factors;
 	/**multiplicacion de todos los factores*/
 	mpz_t prod_factors;
 	/**cantidad de factores*/
@@ -77,3 +77,4 @@ typedef struct{
 	int col;
 	int n_div;
 }data_divT;
+

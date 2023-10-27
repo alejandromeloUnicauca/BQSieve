@@ -11,24 +11,37 @@ void insertarNumero(matrix * matriz, int posFila, int posColumna, int valor){
 	printf("Fila:%d Columna:%d Valor:%d\n",posFila,posColumna,matriz->data[posFila][posColumna]);
 	fflush(stdout);*/
 	
-	if(matriz->data[posFila][posColumna] == 0 && valor == 0){
-		matriz->data[posFila][posColumna] = 0;
-		return;
-	}
+    // Verificar si la matriz y los índices son válidos antes de continuar
+    if (matriz == NULL || matriz->data == NULL ||
+        posFila < 0 || posFila >= matriz->n_rows ||	
+        posColumna < 0 || posColumna >= matriz->n_cols) {
+		//printf("Fila:%d Columna:%d Valor:%d\n",posFila,posColumna,valor);
+		//printf("Fila:%d Columna:%d Valor:%d\n",posFila,posColumna,matriz->data[posFila][posColumna]);
+		fflush(stdout);
+        printf("Error: Parámetros no válidos en insertarNumero\n");
+        exit(EXIT_FAILURE);
+    }
 	
-	if(matriz->data[posFila][posColumna] == 1 && valor == 1){
-		matriz->data[posFila][posColumna] = 0;
-		return;
-	}
-	
-	if(matriz->data[posFila][posColumna] == 0 && valor == 1){
-		matriz->data[posFila][posColumna] = 1;
-		return;
-	}
-	
-	if(matriz->data[posFila][posColumna] == 1 && valor == 0){
-		matriz->data[posFila][posColumna] = 1;
-		return;
+	if(matriz->data != NULL){
+		if(matriz->data != NULL && matriz->data[posFila][posColumna] == 0 && valor == 0){
+			matriz->data[posFila][posColumna] = 0;
+			return;
+		}
+		
+		if(matriz->data[posFila][posColumna] == 1 && valor == 1){
+			matriz->data[posFila][posColumna] = 0;
+			return;
+		}
+		
+		if(matriz->data[posFila][posColumna] == 0 && valor == 1){
+			matriz->data[posFila][posColumna] = 1;
+			return;
+		}
+		
+		if(matriz->data[posFila][posColumna] == 1 && valor == 0){
+			matriz->data[posFila][posColumna] = 1;
+			return;
+		}
 	}
 }
 
@@ -126,10 +139,12 @@ void factoringBlocks(qs_struct * qs_data){
 	
 	for (unsigned long i = 0; i < qs_data->intervalo.length_Qxi; i++)
 	{
-		
 		if(blockDivision(qs_data->intervalo.Qxi[i],qs_data)==1){	
 			qs_data->n_BSuaves++;
-			if(qs_data->n_BSuaves==qs_data->base.length+1)break;
+			if(qs_data->n_BSuaves==qs_data->base.length+1){
+				//printf("Intervalo:%ld\n",i);
+				break;
+			}
 			fprintf(fp,"%ld;",qs_data->intervalo.Xi[i]); 
 			mpz_out_str(fp,10,qs_data->intervalo.Qxi[i]);
 			fprintf(fp,"\n");
@@ -139,6 +154,7 @@ void factoringBlocks(qs_struct * qs_data){
 }
 
 void agregarAVectorDiv(qs_struct * qs_data, data_divT * data_d){
+
 	for (long i = 0; i < qs_data->base.length ; i++)
 	{
 		insertarNumero(&qs_data->mat,qs_data->n_BSuaves,data_d[i].col,data_d[i].n_div%2);
@@ -156,7 +172,6 @@ void agregarAVectorDiv(qs_struct * qs_data, data_divT * data_d){
  * @return retorna 1 si es divisible en la base o 0 si no lo es
  */
 int trialDivision(mpz_t Qxi, qs_struct * qs_data){
-	
 	data_divT * data_d;
 	data_d = (data_divT*)malloc((qs_data->base.length)*sizeof(data_divT));
 	int contDiv = 0;
@@ -197,24 +212,33 @@ int trialDivision(mpz_t Qxi, qs_struct * qs_data){
 	}
 }
 
-void factoringTrial(qs_struct * qs_data){
+/**
+ * @brief Factoriza el array Qxi con divisiones triviales, verifica si cada posicion es un numero bsuave
+ * y lo agrega al archivo polinomio.txt
+ * @param qs_data estructura que contiene el array Qxi
+ * @param startPos Posición donde inicia la verificación de los números bsuaves
+ * @param endPos Posición donde finaliza la verificacion de los números bsuaves
+ */
+int factoringTrial(qs_struct * qs_data, unsigned long endPos, unsigned long posXi){
 	FILE * fp;//file residuos
-	if((fp = fopen("polinomio.txt","w")) == NULL){
+	if((fp = fopen("polinomio.txt","a")) == NULL){
 		perror("fopen");
 		exit(EXIT_FAILURE);
 	}
-
-	for (unsigned long i = 0; i < qs_data->intervalo.length_Qxi; i++)
+	for (unsigned long i = 0; i < endPos; i++)
 	{
+		
 		if(trialDivision(qs_data->intervalo.Qxi[i],qs_data)==1){
 			qs_data->n_BSuaves++;
-			if(qs_data->n_BSuaves==qs_data->base.length+1)break;
-			fprintf(fp,"%ld;",qs_data->intervalo.Xi[i]); 
+			if(qs_data->n_BSuaves==qs_data->base.length+1)return 0;
+			fprintf(fp,"%ld;",qs_data->intervalo.Xi[posXi]); 
 			mpz_out_str(fp,10,qs_data->intervalo.Qxi[i]);
 			fprintf(fp,"\n");
 		}
+		posXi++;
 	}
 	fclose(fp); 
+	return 1;
 }
 
 

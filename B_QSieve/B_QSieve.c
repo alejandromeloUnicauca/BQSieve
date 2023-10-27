@@ -67,6 +67,7 @@ int main(int argc, char **argv)
 					fprintf(stderr, "Carácter no válido '\\x%x'.\n", optopt);
 				usage();
 				exit(EXIT_FAILURE);
+				
 				break;
 		}
 	}
@@ -119,7 +120,7 @@ int main(int argc, char **argv)
 	
 	//Intervalo del polinomio
 	getIntervalLength(qs_data.n,qs_data.intervalo.length);
-	gmp_printf("Intervalo del polinomio:%ld\n", qs_data.intervalo.length);
+	gmp_printf("Intervalo del polinomio:%Zd\n", qs_data.intervalo.length);
 	
 	//Generar base de primos
 	qs_data.base.primes = (prime*)malloc((qs_data.base.length)*sizeof(prime));
@@ -158,31 +159,50 @@ int main(int argc, char **argv)
 	
 	
 	qs_data.intervalo.length_Xi = lengthXi;
+	qs_data.intervalo.length_Qxi = qs_data.intervalo.length_Xi;
 	qs_data.intervalo.Xi = Xi;
 	
 	printf("Calculando Polinomio...\n");
 	t_inicio = clock();
-	fermat(&qs_data); 
+	unsigned long endPos = 0;
+	long numLote = 1;
+	//fermat(&qs_data);
+	crearMatrizNula(&qs_data);
+
+	int res = 1;
+	unsigned long posXi = 0;
+	unsigned long sizeLote = 150000;
+	while(endPos<lengthXi && res==1){
+		endPos=fermat2(&qs_data,numLote++,sizeLote);
+		if(qs_data.blocks.length > 0){
+			factoringBlocks(&qs_data);
+		}
+		else{
+			res = factoringTrial(&qs_data,sizeLote,posXi*sizeLote);  
+		}
+		posXi++;
+	}
+	 
+	
 	t_final = clock();
 	double segundosPolinomio = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;
 	printf("tiempo de calculo del polinomio:%fs\n",segundosPolinomio);	
 	
-	crearMatrizNula(&qs_data); 
 	
 	
-	printf("Factorizando...\n");
+	/*printf("Factorizando...\n");
 	t_inicio = clock();
 	if(qs_data.blocks.length > 0){
 		factoringBlocks(&qs_data);
 	}
 	else{
-		factoringTrial(&qs_data);  
+		factoringTrial(&qs_data,0,qs_data.intervalo.length_Qxi);  
 	}
 	t_final = clock();
 	double segundosFactorizacion = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;
 	printf("tiempo de factorizacion:%fs\n",segundosFactorizacion);	
 	
-	printf("tiempo de Total:%fs\n",segundosCriba+segundosPolinomio+segundosFactorizacion);	
+	printf("tiempo de Total:%fs\n",segundosCriba+segundosPolinomio+segundosFactorizacion);	*/
 	
 	printf("Escribiendo matriz...");
 	imprimirMatriz(qs_data.mat);
@@ -190,7 +210,7 @@ int main(int argc, char **argv)
 	//Liberar Memoria
 	freeStruct(&qs_data); 
 	
-	return 1;
+	exit(EXIT_SUCCESS);
 }
 
 /**
@@ -236,7 +256,7 @@ void crearMatrizNula(qs_struct * qs_data){
 	for (int i = 0; i < qs_data->mat.n_rows; i++) 
 	{
 		qs_data->mat.data[i] = (int*)malloc(qs_data->mat.n_cols*sizeof(int));
-		memset(qs_data->mat.data[i],0,5*sizeof(int));
+		memset(qs_data->mat.data[i],0,qs_data->mat.n_cols * sizeof(int));
 	}
 }
 
@@ -329,12 +349,12 @@ void freeStruct(qs_struct * qs_data){
 	}
 	
 	//liberar memoria del intervalo
-	mpz_clears(qs_data->n,qs_data->intervalo.length,NULL);
+	/*mpz_clears(qs_data->n,qs_data->intervalo.length,NULL);
 	
 	for (long i = 0; i < qs_data->intervalo.length_Qxi; i++)
 	{
 		mpz_clear(qs_data->intervalo.Qxi[i]);
-	}
+	}*/
 	 
 	free(qs_data->intervalo.Qxi);
 	free(qs_data->intervalo.Xi);

@@ -81,9 +81,9 @@ int main(int argc, char * argv[]){
 		}
 		fclose(file);
 		
-		printf("mul Xi:");
+		/*printf("mul Xi:");
 		mpz_out_str(stdout,10,mulX);
-		printf("\n\n");
+		printf("\n\n");*/
 		
 		mpz_t sqr;
 		mpz_init(sqr);
@@ -111,9 +111,14 @@ int main(int argc, char * argv[]){
 		
 		mpz_gcd(gcd,res,n);
 		
-		printf("p:");
+		mpz_t p, q;
+		mpz_inits(p,q,NULL);
+		
+		mpz_set(p,gcd);
+		
+		/*printf("p:");
 		mpz_out_str(stdout,10,gcd);
-		printf("\n");
+		printf("\n");*/
 		
 		mpz_add(res,sqr,mulX);
 		
@@ -123,24 +128,31 @@ int main(int argc, char * argv[]){
 		
 		mpz_gcd(gcd,res,n);
 		
+		mpz_set(q,gcd);
 		
-		printf("q:");
+		/*printf("q:");
 		mpz_out_str(stdout,10,gcd);
-		printf("\n\n");
+		printf("\n\n");*/
+		
+		if(mpz_cmp_ui(p,1)!=0 && mpz_cmp_ui(q,1)!=0){
+			gmp_printf("P:%Zd \nQ:%Zd\n",p,q);
+			mpz_clears(p,q,NULL);
+			exit(EXIT_SUCCESS);
+		}
 		
 		mpz_clear(mulX);
 		mpz_clear(sqr);
 		mpz_clear(gcd);
 		mpz_clear(res);
 		
-		
+		exit(EXIT_FAILURE);
 	}
 	
 	
 	mpz_clear(qx);
 	mpz_clear(tmp);
 	mpz_clear(n);
-	exit(EXIT_SUCCESS);
+	exit(EXIT_FAILURE);
 }
 
 

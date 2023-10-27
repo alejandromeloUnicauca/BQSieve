@@ -4,7 +4,7 @@ prod=1
 filas=$(wc -l vec.txt | cut -d' ' -f1);
 echo "$filas"
 i=1
-while [ "$i" -le 15 ];
+while [ "$i" -le 5 ];
 do
 	rm salida.txt pos.txt
 	#echo "$i"

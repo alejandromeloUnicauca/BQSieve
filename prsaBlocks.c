@@ -59,7 +59,11 @@ int main(int argc, char * argv[]){
 	mpz_init(qs_data.n);
 	mpz_init(qs_data.n_remainders);
 	mpz_init(qs_data.interval);
-		
+		 
+	
+	//printf("%d",shanksTonelli(qs_data.n,qs_data.n,NULL,NULL));
+	//exit(EXIT_SUCCESS);
+	
 	//digitos de N
 	printf("Numero de digitos: %lu\n",strlen(argv[1]));
 	mpz_set_str(qs_data.n, argv[1], 10);
@@ -100,8 +104,12 @@ int main(int argc, char * argv[]){
 	printf("tiempo de calculo de residuos:%fs\n",segundos);
 
 	printf("Creando bloques...\n");
+	t_inicio = clock();
 	crearBloques(factoresBloque,&qs_data);
+	t_final = clock();
 	printf("Bloques creados: %d\n",qs_data.blocks.n_blocks);
+	segundos = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;
+	printf("tiempo de creacion de bloques:%fs\n",segundos);
 	fflush(stdout);
 
 	//Calcular polinomio de Fermat por metodo de bloques
@@ -119,7 +127,21 @@ int main(int argc, char * argv[]){
 	mpz_clear(qs_data.interval);
 	mpz_clear(qs_data.n_remainders);
 	free(block_table.data);
+	
+	
+	//TODO:Arreglar liberacion de memoria
+	for(int i = 0; i < qs_data.blocks.n_blocks; i++)
+	{
+		for (int j = 0; j < qs_data.blocks.block[i].n_factors; j++)
+		{
+			mpz_clear(qs_data.blocks.block[i].factors[j]);
+		}
+		//printf("%x\n",qs_data.blocks.block[i].factors);
+		free(qs_data.blocks.block[i].factors);
+	}
+	
 	free(qs_data.blocks.block);
+	
 	for (int i = 0; i < qs_data.mat.n_rows; i++) 
 	{
 		free(qs_data.mat.data[i]);
@@ -152,7 +174,7 @@ void crearMatrizNula(matrix * matriz){
  */
 void imprimirMatriz(matrix matriz){
 	FILE* f = fopen("matrix.txt","w");
-	printf("%d %d\n",matriz.n_rows, matriz.n_cols);
+	//printf("%d %d\n",matriz.n_rows, matriz.n_cols);
 	fprintf(f,"%d %d\n",matriz.n_rows, matriz.n_cols);
 	int v[matriz.n_cols];
 	int cont;
@@ -244,6 +266,7 @@ int calcularResiduos(mpz_t n, mpz_t longitud){
 			mpz_clear(p);
 		}
 	}
+	fclose(file);
 	printf("Se usaron %d primos\n",contn);  
 	return contRes;
 }
@@ -339,12 +362,13 @@ void polinomioFermat(qs_struct qs_data){
 	mpz_set(limite,qs_data.interval);//limite = intervalo
 	mpz_set_ui(intervalo,0);
 	mpz_sqrt(raiz,qs_data.n);//raiz = sqrt(n)
+	gmp_printf("Raiz:%Zd\n",raiz);
 	numSuaves = mpz_get_ui(qs_data.n_remainders)+1;
 	
 	//mpz_mul_si(intervalo,intervalo,-1);//intervalo = -1*intervalo
 	
 	FILE * fp;
-	if((fp = fopen("polinomioB.txt","w"))==NULL){
+	if((fp = fopen("polinomio.txt","w"))==NULL){
 		perror("fopen");
 		exit(EXIT_FAILURE);
 	}
@@ -372,12 +396,14 @@ void polinomioFermat(qs_struct qs_data){
 			qs_data.n_BSuaves++;
 			//agregar al archivo
 			memset(buf,0,BUFSIZ);
-			if((fp = fopen("polinomioB.txt","a"))==NULL){
+			if((fp = fopen("polinomio.txt","a"))==NULL){
 				perror("fopen");
 				exit(EXIT_FAILURE);
 			}
 			mpz_t Xi;
 			mpz_init(Xi);
+			//mpz_out_str(fp,10,intervalo);
+			//fprintf(fp,";");
 			mpz_add(Xi,raiz,intervalo);
 			mpz_out_str(fp,10,Xi);
 			fprintf(fp,";");
@@ -403,7 +429,7 @@ int buscarSuave(mpz_t suave){
 	char buf[BUFSIZ];
 	FILE * fp;
 	//validar si el numero ya esta
-	if((fp = fopen("polinomioB.txt","r"))==NULL){
+	if((fp = fopen("polinomio.txt","r"))==NULL){
 			perror("fopen");
 			exit(EXIT_FAILURE);
 	}
@@ -452,7 +478,13 @@ void crearBloques(int n, qs_struct * qs_data){
 	
 	qs_data->blocks.block = (remainders_block*)malloc((qs_data->blocks.n_blocks)*sizeof(remainders_block));
 	char buf[BUFSIZ];
-
+	
+	for(int i = 0; i < qs_data->blocks.n_blocks; i++)
+	{
+		qs_data->blocks.block[i].factors = (mpz_t*)malloc(n*sizeof(mpz_t));//reservo memoria para n factores
+		//printf("%x\n",qs_data->blocks.block[i].factors);
+	}
+	
 	int tb=n;//tamaño de bloques
 	int n_blocks = 0;
 	mpz_t mulTemp;//variable multiplicacion de bloques
@@ -467,13 +499,15 @@ void crearBloques(int n, qs_struct * qs_data){
 	while(!feof(fr)){
 		while(tb!=0 && !feof(fr)){
 			memset(buf,0,BUFSIZ);
-			//qs_data->blocks.block[n_blocks].factors = (mpz_t**)malloc(n*sizeof(mpz_t));//reservo memoria para n factores
 			if(fgets(buf,BUFSIZ,fr)!=NULL){
 				buf[strlen(buf)-1] = '\0';
 				fbf = fopen("bloquesFac.txt","a");
 				fprintf(fbf,"%s;",buf);
 				fclose(fbf);
 				mpz_init_set_str(valorTemp, buf, 10);
+				mpz_init_set_str(qs_data->blocks.block[n_blocks].factors[n-tb], buf, 10);
+				//mpz_out_str(stdout,10,qs_data->blocks.block[n_blocks].factors[n-tb]);
+				//printf("\n");
 				mpz_mul(mulTemp,mulTemp,valorTemp);//mulTemp=mulTemp*valorTemp
 				tb--;
 				mpz_clear(valorTemp);
@@ -588,14 +622,16 @@ int validarBSuave(mpz_t bSuave,qs_struct qs_data){
  * @return
  */
 void agregarAVectorBlock(qs_struct qs_data){
+	//TODO:cambiar archivo bloquesfac por estructura
 	int i = 0;
+	mpz_t mcd;//valor del mcd
+	mpz_init(mcd);
 	for (i = 0; i < block_table.n_values; i++)
 	{
 		FILE * fblocks;
 		fblocks = fopen("bloquesFac.txt","r");
 	
-		mpz_t mcd;//valor del mcd
-		mpz_init(mcd);
+		
 		mpz_set_ui(mcd,block_table.data[i].gcd);
 		
 		int contV = block_table.data[i].periodo;//cliclos que se repite el mcd
@@ -610,6 +646,7 @@ void agregarAVectorBlock(qs_struct qs_data){
 			{
 				insertarNumero(&qs_data.mat,qs_data.n_BSuaves,(block-1)*qs_data.blocks.n_blocks+i,0);
 			}
+			fclose(fblocks);
 			continue;
 		}
 		char buf2[BUFSIZ];
@@ -633,6 +670,7 @@ void agregarAVectorBlock(qs_struct qs_data){
 						printf(";P=%d\n",nblock);
 						fflush(stdout);
 					}*/
+					//matriz,fila n_Bsuaves que se van encontrando,columna,valor
 					if(mpz_divisible_ui_p(mcd,nblock)){
 						insertarNumero(&qs_data.mat,qs_data.n_BSuaves,(block-1)*qs_data.blocks.block[0].n_factors+i,contV%2);
 					}else{
@@ -645,7 +683,7 @@ void agregarAVectorBlock(qs_struct qs_data){
 		
 		//printf("%d; %d\n",contV,block);
 		
-		mpz_clear(mcd);
+		
 		fclose(fblocks);
 		/*if(posFila==105){
 			for (int i = 0; i < 115; i++)
@@ -654,6 +692,7 @@ void agregarAVectorBlock(qs_struct qs_data){
 			}
 		}*/
 	}
+	mpz_clear(mcd);
 }
 
 void insertarNumero(matrix * matriz, int posFila, int posColumna, int valor){

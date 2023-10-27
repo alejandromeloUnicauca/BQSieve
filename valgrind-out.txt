@@ -1,0 +1,166 @@
+==9781== Memcheck, a memory error detector
+==9781== Copyright (C) 2002-2015, and GNU GPL'd, by Julian Seward et al.
+==9781== Using Valgrind-3.12.0.SVN and LibVEX; rerun with -h for copyright info
+==9781== Command: ./prsaBlocks 996592829729099095 20
+==9781== Parent PID: 1292
+==9781== 
+--9781-- 
+--9781-- Valgrind options:
+--9781--    --leak-check=full
+--9781--    --show-leak-kinds=all
+--9781--    --track-origins=yes
+--9781--    --verbose
+--9781--    --log-file=valgrind-out.txt
+--9781-- Contents of /proc/version:
+--9781--   Linux version 4.9.0-8-amd64 (debian-kernel@lists.debian.org) (gcc version 6.3.0 20170516 (Debian 6.3.0-18+deb9u1) ) #1 SMP Debian 4.9.110-3+deb9u6 (2018-10-08)
+--9781-- 
+--9781-- Arch and hwcaps: AMD64, LittleEndian, amd64-cx16-lzcnt-rdtscp-sse3-avx-avx2
+--9781-- Page sizes: currently 4096, max supported 4096
+--9781-- Valgrind library directory: /usr/lib/valgrind
+--9781-- Reading syms from /home/ingesis/prsa/prsaBlocks
+--9781-- Reading syms from /lib/x86_64-linux-gnu/ld-2.24.so
+--9781--   Considering /usr/lib/debug/.build-id/26/3f909dbe11a66f7c6233e3ff0521148d9f8370.debug ..
+--9781--   .. build-id is valid
+--9781-- Reading syms from /usr/lib/valgrind/memcheck-amd64-linux
+--9781--   Considering /usr/lib/valgrind/memcheck-amd64-linux ..
+--9781--   .. CRC mismatch (computed db5b2ec5 wanted 0eae776b)
+--9781--   Considering /usr/lib/debug/usr/lib/valgrind/memcheck-amd64-linux ..
+--9781--   .. CRC is valid
+--9781--    object doesn't have a dynamic symbol table
+--9781-- Scheduler: using generic scheduler lock implementation.
+--9781-- Reading suppressions file: /usr/lib/valgrind/default.supp
+==9781== embedded gdbserver: reading from /tmp/vgdb-pipe-from-vgdb-to-9781-by-ingesis-on-???
+==9781== embedded gdbserver: writing to   /tmp/vgdb-pipe-to-vgdb-from-9781-by-ingesis-on-???
+==9781== embedded gdbserver: shared mem   /tmp/vgdb-pipe-shared-mem-vgdb-9781-by-ingesis-on-???
+==9781== 
+==9781== TO CONTROL THIS PROCESS USING vgdb (which you probably
+==9781== don't want to do, unless you know exactly what you're doing,
+==9781== or are doing some strange experiment):
+==9781==   /usr/lib/valgrind/../../bin/vgdb --pid=9781 ...command...
+==9781== 
+==9781== TO DEBUG THIS PROCESS USING GDB: start GDB like this
+==9781==   /path/to/gdb ./prsaBlocks
+==9781== and then give GDB the following command
+==9781==   target remote | /usr/lib/valgrind/../../bin/vgdb --pid=9781
+==9781== --pid is optional if only one valgrind process is running
+==9781== 
+--9781-- REDIR: 0x401af80 (ld-linux-x86-64.so.2:strlen) redirected to 0x3809de81 (vgPlain_amd64_linux_REDIR_FOR_strlen)
+--9781-- REDIR: 0x4019830 (ld-linux-x86-64.so.2:index) redirected to 0x3809de9b (vgPlain_amd64_linux_REDIR_FOR_index)
+--9781-- Reading syms from /usr/lib/valgrind/vgpreload_core-amd64-linux.so
+--9781--   Considering /usr/lib/valgrind/vgpreload_core-amd64-linux.so ..
+--9781--   .. CRC mismatch (computed 74a069fa wanted 84d99202)
+--9781--   Considering /usr/lib/debug/usr/lib/valgrind/vgpreload_core-amd64-linux.so ..
+--9781--   .. CRC is valid
+--9781-- Reading syms from /usr/lib/valgrind/vgpreload_memcheck-amd64-linux.so
+--9781--   Considering /usr/lib/valgrind/vgpreload_memcheck-amd64-linux.so ..
+--9781--   .. CRC mismatch (computed 88f2547e wanted 8a7a4459)
+--9781--   Considering /usr/lib/debug/usr/lib/valgrind/vgpreload_memcheck-amd64-linux.so ..
+--9781--   .. CRC is valid
+==9781== WARNING: new redirection conflicts with existing -- ignoring it
+--9781--     old: 0x0401af80 (strlen              ) R-> (0000.0) 0x3809de81 vgPlain_amd64_linux_REDIR_FOR_strlen
+--9781--     new: 0x0401af80 (strlen              ) R-> (2007.0) 0x04c2ee60 strlen
+--9781-- REDIR: 0x4019a50 (ld-linux-x86-64.so.2:strcmp) redirected to 0x4c2ff60 (strcmp)
+--9781-- REDIR: 0x401ba90 (ld-linux-x86-64.so.2:mempcpy) redirected to 0x4c33330 (mempcpy)
+--9781-- Reading syms from /usr/lib/x86_64-linux-gnu/libmpfr.so.4.1.5
+--9781--   Considering /usr/lib/debug/.build-id/5a/58410651671ae91539d1b4b1e85a0940e13996.debug ..
+--9781--   .. build-id is valid
+--9781-- Reading syms from /usr/local/lib/libgmp.so.10.3.2
+--9781-- Reading syms from /lib/x86_64-linux-gnu/libm-2.24.so
+--9781--   Considering /usr/lib/debug/.build-id/1b/95e3a8b8788b07e4f59ee69b1877f9deb42033.debug ..
+--9781--   .. build-id is valid
+--9781-- Reading syms from /lib/x86_64-linux-gnu/libc-2.24.so
+--9781--   Considering /usr/lib/debug/.build-id/aa/889e26a70f98fa8d230d088f7cc5bf43573163.debug ..
+--9781--   .. build-id is valid
+--9781-- REDIR: 0x569d710 (libc.so.6:strcasecmp) redirected to 0x4a26740 (_vgnU_ifunc_wrapper)
+--9781-- REDIR: 0x56991b0 (libc.so.6:strcspn) redirected to 0x4a26740 (_vgnU_ifunc_wrapper)
+--9781-- REDIR: 0x569fa00 (libc.so.6:strncasecmp) redirected to 0x4a26740 (_vgnU_ifunc_wrapper)
+--9781-- REDIR: 0x569b620 (libc.so.6:strpbrk) redirected to 0x4a26740 (_vgnU_ifunc_wrapper)
+--9781-- REDIR: 0x569b9b0 (libc.so.6:strspn) redirected to 0x4a26740 (_vgnU_ifunc_wrapper)
+--9781-- REDIR: 0x569cd80 (libc.so.6:memmove) redirected to 0x4a26740 (_vgnU_ifunc_wrapper)
+--9781-- REDIR: 0x569b330 (libc.so.6:rindex) redirected to 0x4c2e7f0 (rindex)
+--9781-- REDIR: 0x5693f10 (libc.so.6:malloc) redirected to 0x4c2bb40 (malloc)
+--9781-- REDIR: 0x5699650 (libc.so.6:strlen) redirected to 0x4c2eda0 (strlen)
+--9781-- REDIR: 0x56a3710 (libc.so.6:strchrnul) redirected to 0x4c32e60 (strchrnul)
+--9781-- REDIR: 0x569ce70 (libc.so.6:__GI_mempcpy) redirected to 0x4c33060 (__GI_mempcpy)
+--9781-- REDIR: 0x56945c0 (libc.so.6:realloc) redirected to 0x4c2dd50 (realloc)
+--9781-- REDIR: 0x569d230 (libc.so.6:memset) redirected to 0x4a26740 (_vgnU_ifunc_wrapper)
+--9781-- REDIR: 0x5742230 (libc.so.6:__memset_avx2_unaligned_erms) redirected to 0x4c324c0 (memset)
+--9781-- REDIR: 0x56a2100 (libc.so.6:memcpy@@GLIBC_2.14) redirected to 0x4a26740 (_vgnU_ifunc_wrapper)
+--9781-- REDIR: 0x5741de0 (libc.so.6:__memcpy_avx_unaligned_erms) redirected to 0x4c325c0 (memmove)
+--9781-- REDIR: 0x5694510 (libc.so.6:free) redirected to 0x4c2cd70 (free)
+--9781-- REDIR: 0x569bf50 (libc.so.6:__GI_strstr) redirected to 0x4c33590 (__strstr_sse2)
+--9781-- REDIR: 0x569c5f0 (libc.so.6:memchr) redirected to 0x4c30000 (memchr)
+--9781-- REDIR: 0x569ce90 (libc.so.6:memcpy@GLIBC_2.2.5) redirected to 0x4c300c0 (memcpy@GLIBC_2.2.5)
+==9781== Invalid write of size 8
+==9781==    at 0x10AA3E: crearBloques (prsaBlocks.c:472)
+==9781==    by 0x109AED: main (prsaBlocks.c:103)
+==9781==  Address 0x5a2bb90 is 0 bytes after a block of size 128 alloc'd
+==9781==    at 0x4C2BBAF: malloc (vg_replace_malloc.c:299)
+==9781==    by 0x10A99C: crearBloques (prsaBlocks.c:455)
+==9781==    by 0x109AED: main (prsaBlocks.c:103)
+==9781== 
+==9781== Invalid write of size 4
+==9781==    at 0x10ABC2: crearBloques (prsaBlocks.c:490)
+==9781==    by 0x109AED: main (prsaBlocks.c:103)
+==9781==  Address 0x5a2bba8 is 24 bytes after a block of size 128 in arena "client"
+==9781== 
+--9781-- REDIR: 0x569b2f0 (libc.so.6:strncpy) redirected to 0x4a26740 (_vgnU_ifunc_wrapper)
+--9781-- REDIR: 0x56ad7a0 (libc.so.6:__strncpy_sse2_unaligned) redirected to 0x4c2f3b0 (__strncpy_sse2_unaligned)
+==9781== Invalid read of size 4
+==9781==    at 0x10B0AD: agregarAVectorBlock (prsaBlocks.c:615)
+==9781==    by 0x10A670: polinomioFermat (prsaBlocks.c:371)
+==9781==    by 0x109B5A: main (prsaBlocks.c:110)
+==9781==  Address 0x5a2bb08 is 8 bytes before a block of size 128 alloc'd
+==9781==    at 0x4C2BBAF: malloc (vg_replace_malloc.c:299)
+==9781==    by 0x10A99C: crearBloques (prsaBlocks.c:455)
+==9781==    by 0x109AED: main (prsaBlocks.c:103)
+==9781== 
+
+valgrind: m_mallocfree.c:303 (get_bszB_as_is): Assertion 'bszB_lo == bszB_hi' failed.
+valgrind: Heap block lo/hi size mismatch: lo = 192, hi = 0.
+This is probably caused by your program erroneously writing past the
+end of a heap block and corrupting heap metadata.  If you fix any
+invalid writes reported by Memcheck, this assertion failure will
+probably go away.  Please try that before reporting this as a bug.
+
+
+host stacktrace:
+==9781==    at 0x38083828: show_sched_status_wrk (m_libcassert.c:343)
+==9781==    by 0x38083944: report_and_quit (m_libcassert.c:419)
+==9781==    by 0x38083AD1: vgPlain_assert_fail (m_libcassert.c:485)
+==9781==    by 0x38090D41: get_bszB_as_is (m_mallocfree.c:301)
+==9781==    by 0x38090D41: get_bszB (m_mallocfree.c:311)
+==9781==    by 0x38090D41: mergeWithFreeNeighbours (m_mallocfree.c:1996)
+==9781==    by 0x3804F963: release_oldest_block (mc_malloc_wrappers.c:165)
+==9781==    by 0x3804F963: create_MC_Chunk (mc_malloc_wrappers.c:208)
+==9781==    by 0x3804FB2B: vgMemCheck_new_block (mc_malloc_wrappers.c:366)
+==9781==    by 0x3804FCA6: vgMemCheck_malloc (mc_malloc_wrappers.c:385)
+==9781==    by 0x380D7B53: do_client_request (scheduler.c:1866)
+==9781==    by 0x380D7B53: vgPlain_scheduler (scheduler.c:1425)
+==9781==    by 0x380E6416: thread_wrapper (syswrap-linux.c:103)
+==9781==    by 0x380E6416: run_a_thread_NORETURN (syswrap-linux.c:156)
+
+sched status:
+  running_tid=1
+
+Thread 1: status = VgTs_Runnable (lwpid 9781)
+==9781==    at 0x4C2BBAF: malloc (vg_replace_malloc.c:299)
+==9781==    by 0x50AB8A8: __gmp_default_allocate (in /usr/local/lib/libgmp.so.10.3.2)
+==9781==    by 0x50B9607: __gmpz_init (in /usr/local/lib/libgmp.so.10.3.2)
+==9781==    by 0x10ACA6: validarBSuave (prsaBlocks.c:515)
+==9781==    by 0x10A621: polinomioFermat (prsaBlocks.c:368)
+==9781==    by 0x109B5A: main (prsaBlocks.c:110)
+
+
+Note: see also the FAQ in the source distribution.
+It contains workarounds to several common problems.
+In particular, if Valgrind aborted or crashed after
+identifying problems in your program, there's a good chance
+that fixing those problems will prevent Valgrind aborting or
+crashing, especially if it happened in m_mallocfree.c.
+
+If that doesn't help, please report this bug to: www.valgrind.org
+
+In the bug report, send all the above text, the valgrind
+version, and what OS and version you are using.  Thanks.
+

@@ -1,0 +1,69 @@
+Prueba N°1 de 72 bits 
+N=996592829729099095
+Digitos de N:18
+Prueba con bloques
+real 15.36
+user 8.66
+sys 4.06
+Bloques creados: 4
+
+Prueba con divisiones triviales
+real 53.33
+user 46.46
+sys 4.17
+
+Prueba N°2 de 80 bits 
+N=99999993907946914019
+Digitos de N:20
+Prueba con bloques
+real 21.25
+user 12.40
+sys 4.50
+Bloques creados: 6
+
+Prueba con divisiones triviales
+real 82.28
+user 73.52
+sys 4.61
+
+Prueba N°3 de 88 bits 
+N=9989494799330581599731
+Digitos de N:22
+Prueba con bloques
+real 17.08
+user 8.64
+sys 3.35
+Bloques creados: 8
+
+Prueba con divisiones triviales
+real 60.02
+user 51.82
+sys 3.28
+
+Prueba N°4 de 96 bits 
+N=947711985906699994312729
+Digitos de N:24
+Prueba con bloques
+real 22.93
+user 12.80
+sys 3.72
+Bloques creados: 10
+
+Prueba con divisiones triviales
+real 89.74
+user 79.67
+sys 3.76
+
+Prueba N°5 de 104 bits 
+N=99944799997999996302119929
+Digitos de N:26
+Prueba con bloques
+real 87.83
+user 68.02
+sys 11.05
+Bloques creados: 13
+
+Prueba con divisiones triviales
+real 478.20
+user 457.69
+sys 12.33

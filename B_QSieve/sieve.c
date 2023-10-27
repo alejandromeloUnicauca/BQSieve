@@ -227,7 +227,7 @@ double * sievingNaiveNegative(qs_struct * qs_data){
 	mpfr_sqrt(T,T,MPFR_RNDZ);
 	mpfr_mul_z(T,T,qs_data->intervalo.length,MPFR_RNDZ);
 	mpfr_log(T, T, MPFR_RNDZ);
-	mpfr_printf ("T:%.2Rf\n", T);
+	//mpfr_printf ("T:%.2Rf\n", T);
 	
 	mpfr_clear(T);
 	mpz_clears(n,raizn,NULL);
@@ -317,7 +317,7 @@ double * sievingNaivePositive(qs_struct * qs_data){
 	mpfr_sqrt(T,T,MPFR_RNDZ);
 	mpfr_mul_z(T,T,qs_data->intervalo.length,MPFR_RNDZ);
 	mpfr_log(T, T, MPFR_RNDZ);
-	mpfr_printf ("T:%.2Rf\n", T);
+	//mpfr_printf ("T:%.2Rf\n", T);
 	mpfr_clear(T);
 	
 	mpz_clears(n,raizn,NULL);
