@@ -11,16 +11,16 @@ wait;
 if [[ "$exit_status" == "1" ]];then
 	exit 1;
 fi
-/home/ingesis/cado-nfs-2.3.0/cado-nfs-2.3.0/build/debian9/linalg/bwc/mf_scan --ascii-in mfile=matrix.txt --binary-out ofile=matrix.bin --freq
+/home/debian/Descargas/cado-nfs/build/debian12/linalg/bwc/mf_scan --ascii-in mfile=matrix.txt --binary-out ofile=matrix.bin --freq
 wait
 cp matrix.bin matrix.rw.bin matrix.cw.bin /tmp/.
 wait
 rm -r /tmp/c60/
 wait
 echo "Solucionando Matriz...";
-/home/ingesis/cado-nfs-2.3.0/cado-nfs-2.3.0/build/debian9/linalg/bwc/bwc.pl :complete thr=2 m=64 n=64 nullspace=left interval=100 matrix=/tmp/matrix.bin wdir=/tmp/c60/c60.bwc interleaving=0 > outputbwc.txt
+/home/debian/Descargas/cado-nfs/build/debian12/linalg/bwc/bwc.pl :complete thr=2 m=64 n=64 nullspace=left interval=100 matrix=/tmp/matrix.bin wdir=/tmp/c60/c60.bwc interleaving=0 > outputbwc.txt
 wait
-cp /tmp/c60/c60.bwc/K.sols0-64.0.txt /home/ingesis/prsa/B_QSieve/.
+cp /tmp/c60/c60.bwc/K.sols0-64.0.txt /home/debian/prsa/B_QSieve/.
 wait
 ./readKsol.sh K.sols0-64.0.txt > vec.txt
 wait
