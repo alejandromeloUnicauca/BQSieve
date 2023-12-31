@@ -129,28 +129,35 @@ int blockDivision(mpz_t Qxi, qs_struct * qs_data){
 	}
 }
 
-void factoringBlocks(qs_struct * qs_data){
+/**
+ * @brief Factoriza el array Qxi con divisiones triviales, verifica si cada posicion es un numero bsuave
+ * y lo agrega al archivo polinomio.txt
+ * @param qs_data estructura que contiene el array Qxi
+ * @param startPos Posición donde inicia la verificación de los números bsuaves
+ * @param endPos Posición donde finaliza la verificacion de los números bsuaves
+ * @return retorna 1 si aun faltan numeros B_suaves por verificar y 0 en caso de haberlos encontrado todos
+ */
+int factoringBlocks(qs_struct * qs_data,  unsigned long endPos, unsigned long posXi){
 
 	FILE * fp;//file residuos
-	if((fp = fopen("polinomio.txt","w")) == NULL){
+	if((fp = fopen("polinomio.txt","a")) == NULL){
 		perror("fopen");
 		exit(EXIT_FAILURE);
 	}
 	
-	for (unsigned long i = 0; i < qs_data->intervalo.length_Qxi; i++)
+	for (unsigned long i = 0; i < endPos; i++)
 	{
 		if(blockDivision(qs_data->intervalo.Qxi[i],qs_data)==1){	
 			qs_data->n_BSuaves++;
-			if(qs_data->n_BSuaves==qs_data->base.length+1){
-				//printf("Intervalo:%ld\n",i);
-				break;
-			}
-			fprintf(fp,"%ld;",qs_data->intervalo.Xi[i]); 
+			if(qs_data->n_BSuaves==qs_data->base.length+1)return 0;
+			fprintf(fp,"%ld;",qs_data->intervalo.Xi[posXi]); 
 			mpz_out_str(fp,10,qs_data->intervalo.Qxi[i]);
 			fprintf(fp,"\n");
 		}
+		posXi++;
 	}
 	fclose(fp); 
+	return 1;
 }
 
 void agregarAVectorDiv(qs_struct * qs_data, data_divT * data_d){
@@ -218,6 +225,7 @@ int trialDivision(mpz_t Qxi, qs_struct * qs_data){
  * @param qs_data estructura que contiene el array Qxi
  * @param startPos Posición donde inicia la verificación de los números bsuaves
  * @param endPos Posición donde finaliza la verificacion de los números bsuaves
+ * @return retorna 1 si aun faltan numeros B_suaves por verificar y 0 en caso de haberlos encontrado todos
  */
 int factoringTrial(qs_struct * qs_data, unsigned long endPos, unsigned long posXi){
 	FILE * fp;//file residuos

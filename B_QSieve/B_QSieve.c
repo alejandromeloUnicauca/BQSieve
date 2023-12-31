@@ -175,7 +175,7 @@ int main(int argc, char **argv)
 	while(endPos<lengthXi && res==1){
 		endPos=fermat2(&qs_data,numLote++,sizeLote);
 		if(qs_data.blocks.length > 0){
-			factoringBlocks(&qs_data);
+			res = factoringBlocks(&qs_data,sizeLote,posXi*sizeLote);
 		}
 		else{
 			res = factoringTrial(&qs_data,sizeLote,posXi*sizeLote);  
@@ -214,36 +214,47 @@ int main(int argc, char **argv)
 }
 
 /**
- * @brief imprime los datos de la matriz
- * @param matriz: estructura que contiene la matriz
+ * @brief Imprime una matriz dispersa en un archivo.
+ *
+ * Esta función toma una matriz dispersa representada por la estructura `matrix` y la imprime
+ * en un archivo llamado "matrix.txt". La matriz dispersa se representa indicando el número de
+ * elementos no cero en cada fila, seguido de los índices de las columnas donde se encuentran
+ * los elementos no cero.
+ *
+ * @param matriz Estructura que representa la matriz dispersa.
  */
-void imprimirMatriz(matrix matriz){
-	FILE* f = fopen("matrix.txt","w");
-	//printf("%d %d\n",matriz.n_rows, matriz.n_cols);
-	fprintf(f,"%d %d\n",matriz.n_rows, matriz.n_cols);
-	int v[matriz.n_cols];
-	int cont;
-	for (int i = 0; i < matriz.n_rows; i++)
-	{
-		cont = 0;
-		for (int j = 0; j < matriz.n_cols; j++)
-		{
-			//printf("%d ",matriz.data[i][j]);
-			if(matriz.data[i][j]==1){
-				v[cont] = j;
-				cont++;
-			}
-		}
-		fprintf(f,"%d ",cont);
-		for (int k = 0; k < cont; k++)
-		{
-			fprintf(f,"%d ",v[k]);
-		}
-		//printf("\n");	
-		fprintf(f,"\n");
-	}
-	
-	fclose(f);
+void imprimirMatriz(matrix matriz) {
+    FILE* f = fopen("matrix.txt", "w");  // Abrir el archivo en modo escritura
+
+    // Imprimir las dimensiones de la matriz en la primera línea del archivo
+    fprintf(f, "%d %d\n", matriz.n_rows, matriz.n_cols);
+
+    int v[matriz.n_cols];  // Arreglo para almacenar índices de elementos no cero
+    int cont;              // Contador de elementos no cero
+
+    // Recorrer filas de la matriz
+    for (int i = 0; i < matriz.n_rows; i++) {
+        cont = 0;
+
+        // Recorrer columnas de la matriz
+        for (int j = 0; j < matriz.n_cols; j++) {
+            // Si el elemento en la posición (i, j) es 1, almacenar el índice j
+            if (matriz.data[i][j] == 1) {
+                v[cont] = j;
+                cont++;
+            }
+        }
+
+        // Imprimir el número de elementos no cero en la fila y sus índices
+        fprintf(f, "%d ", cont);
+        for (int k = 0; k < cont; k++) {
+            fprintf(f, "%d ", v[k]);
+        }
+
+        fprintf(f, "\n");  // Nueva línea para la siguiente fila
+    }
+
+    fclose(f);  // Cerrar el archivo
 }
 
 void crearMatrizNula(qs_struct * qs_data){

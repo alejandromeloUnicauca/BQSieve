@@ -4,5 +4,5 @@ void agregarAVectorDiv(qs_struct * qs_data, data_divT * data_d);
 int blockDivision(mpz_t Qxi, qs_struct * qs_data);
 int trialDivision(mpz_t Qxi, qs_struct * qs_data);
 int factoringTrial(qs_struct * qs_data, unsigned long endPos, unsigned long posXi);
-void factoringBlocks(qs_struct * qs_data);
+int factoringBlocks(qs_struct * qs_data, unsigned long endPos, unsigned long posXi);
 

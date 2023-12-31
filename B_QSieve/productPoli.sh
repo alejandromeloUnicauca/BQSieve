@@ -1,12 +1,11 @@
 #!/bin/bash	
-rm salidap.txt
 prod=1
 filas=$(wc -l vec.txt | cut -d' ' -f1);
 echo "$filas"
 i=1
 while [ "$i" -le 64 ];
 do
-	rm salida.txt pos.txt
+
 	#echo "$i"
 	while read f1 <&3 && read f2 <&2; do 
 		f2=$(echo "$f2" | cut -c"$i");
@@ -25,4 +24,5 @@ do
 		break;
 	fi
 	i=$((i+1))
+	rm salida.txt pos.txt
 done
