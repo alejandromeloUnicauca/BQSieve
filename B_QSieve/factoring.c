@@ -50,7 +50,7 @@ void agregarAVectorBlock(qs_struct * qs_data, div_data_table * block_table){
 	mpz_init(gcd);
 	for (long i = 0; i < block_table->n_values; i++)
 	{
-		mpz_set_ui(gcd,block_table->data[i].gcd);
+		mpz_set(gcd,block_table->data[i].gcd);
 		int block = block_table->data[i].block;
 		int periodo = block_table->data[i].periodo;
 		
@@ -100,14 +100,14 @@ int blockDivision(mpz_t Qxi, qs_struct * qs_data){
 		while(mpz_cmp_ui(gcd,1)!=0){
 			mpz_divexact(QxiTemp,QxiTemp,gcd);
 			contGcd++;
-
 			mpz_gcd(gcd,QxiTemp,qs_data->blocks.block[i].prod_factors);
 			//si el maximo comun divisor cambia se guardan los datos en la tabla
 			if(mpz_cmp(gcd,gcdAnt)!=0){
 				//Se almacena en una estructura el gcd,
 				//las veces que se repite, y el bloque al que pertenece
 				block_table.data[cont].block = i;
-				block_table.data[cont].gcd = mpz_get_ui(gcdAnt);
+				mpz_init(block_table.data[cont].gcd);
+				mpz_set(block_table.data[cont].gcd,gcdAnt);
 				block_table.data[cont].periodo = contGcd;
 				mpz_set(gcdAnt,gcd);
 				contGcd = 0;
@@ -115,11 +115,12 @@ int blockDivision(mpz_t Qxi, qs_struct * qs_data){
 			}
 		}
 	}
-	
+
 	block_table.n_values = cont;
 	if(mpz_cmp_ui(QxiTemp,1)==0){
 		agregarAVectorBlock(qs_data, &block_table);
 		mpz_clears(QxiTemp,gcd,gcdAnt,NULL);
+		//Todo Liberar memoria de data->gcd
 		free(block_table.data);
 		return 1;
 	}else{
@@ -186,14 +187,15 @@ int trialDivision(mpz_t Qxi, qs_struct * qs_data){
 	mpz_init(QxiTemp);
 	mpz_set(QxiTemp,Qxi);
 	if(mpz_sgn(QxiTemp)==-1)
-			mpz_mul_si(QxiTemp,QxiTemp,-1);
-	for (long i = 0; i < qs_data->base.length;)
+		mpz_mul_si(QxiTemp,QxiTemp,-1);
+
+	for (unsigned long i = 0; i < qs_data->base.length;)
 	{
 		mpz_t p;
 		mpz_init(p);
 		mpz_set(p,qs_data->base.primes[i].value);
 		contDiv = 0;
-		
+
 		while(mpz_divisible_p(QxiTemp,p)!=0){
 			mpz_divexact(QxiTemp,QxiTemp,p);
 			contDiv++;
@@ -235,7 +237,6 @@ int factoringTrial(qs_struct * qs_data, unsigned long endPos, unsigned long posX
 	}
 	for (unsigned long i = 0; i < endPos; i++)
 	{
-		
 		if(trialDivision(qs_data->intervalo.Qxi[i],qs_data)==1){
 			qs_data->n_BSuaves++;
 			if(qs_data->n_BSuaves==qs_data->base.length+1)return 0;

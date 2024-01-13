@@ -10,7 +10,7 @@
   */
 typedef struct{
 	/** maximo comun divisor  */
-	long gcd;
+	mpz_t gcd;
 	/** veces que se repite el gcd */
 	int periodo;
 	/** bloque en el que se obtuvo el gcd y el periodo*/

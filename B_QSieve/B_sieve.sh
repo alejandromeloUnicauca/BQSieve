@@ -28,4 +28,4 @@ wait
 wait
 cat salidap.txt
 wait
-rm matrix.bin matrix.rw.bin matrix.cw.bin matrix.txt residuos.txt outputbwc.txt K.sols0-64.0.txt salidap.txt vec.txt pos.txt salida.txt polinomio.txt
+rm -R matrix.bin matrix.rw.bin matrix.cw.bin matrix.txt residuos.txt outputbwc.txt K.sols0-64.0.txt salidap.txt vec.txt pos.txt salida.txt polinomio.txt /tmp/bqsieve
