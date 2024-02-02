@@ -146,8 +146,6 @@ int main(int argc, char **argv)
 		printf("tiempo de creacion de los bloques:%fs\n",segundos);	
 	}
 	
-	//TODO:Optimizar criba y calculo del polinomio
-	//TODO:Arreglar paso de parametros
 	long lengthXi = 0;
 	
 	printf("Cribando...\n");

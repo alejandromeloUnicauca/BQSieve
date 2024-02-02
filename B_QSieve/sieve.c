@@ -139,230 +139,167 @@ int shanksTonelli(mpz_t n, mpz_t p, mpz_t r1, mpz_t r2) {
 	return 1;
 }
 
-/** 
-* @brief 
-* @param qs_data: 
-* @return 
-*/
-double * sievingNaiveNegative(qs_struct * qs_data){
-	
-	long intervalo = mpz_get_ui(qs_data->intervalo.length);
-	double *S = (double*) malloc(intervalo*sizeof(double));
-	memset(S,0,sizeof(double)*intervalo);
-	
-	mpz_t n,raizn;
-	mpz_inits(n,raizn,NULL);
-	
-	mpz_set(n,qs_data->n);
-	mpz_sqrt(raizn,n);
-	//gmp_printf("raizn:%Zd",raizn);
-	for (int i = 0; i < qs_data->base.length; i++)
-	{
-		mpz_t x1, x2, p;
-		mpz_inits(x1,x2,p,NULL);	
-		
-		mpz_set(p,qs_data->base.primes[i].value);
-		double logp = mpfr_get_d(qs_data->base.primes[i].log_value,MPFR_RNDZ);
-		shanksTonelli(n,p,x1,x2);
-		//gmp_printf("%Zd,%Zd\n",x1,x2);
-		mpz_sub(x1,x1,raizn);
-		mpz_mod(x1,x1,p);
-		
-		mpz_sub(x2,x2,raizn);
-		mpz_mod(x2,x2,p);
-		//gmp_printf("%Zd,%Zd\n",x1,x2);
-		//si x1>x2 se intercambian
-		if(mpz_cmp(x1,x2)==1){
-			mpz_t temp;
-			mpz_init(temp);
-			mpz_set(temp,x1);
-			mpz_set(x1,x2);
-			mpz_set(x2,temp);
-			mpz_clear(temp);
-		}
-		//gmp_printf("%Zd,%Zd\n",x1,x2);
-		
-		mpz_t d1,d2,Mp;
-		mpz_inits(d1,d2,Mp,NULL);
-		//x1<x2
-		
-		mpz_sub(x2,x2,x1);
-		
-		
-		mpz_set(d1,x2);
-		mpz_sub(d2,p,d1);
+/**
+ * @brief Realiza el tamizado para encontrar números Xi que tienen al menos un factor de la base.
+ *
+ * @param qs_data Estructura de datos que contiene la información necesaria para el tamizado.
+ * @param typeSieving Tipo de tamizado (POSITIVE o NEGATIVE) que determina si se busca en los números positivos o negativos.
+ * @return Puntero a un array de números Xi que tienen al menos un factor de la base.
+ *         El usuario es responsable de liberar la memoria asignada para este array.
+ */
+double * sievingNaive(qs_struct * qs_data, enum TypeSieving typeSieving) {
+    // Obtener la longitud del intervalo
+    long intervalo = mpz_get_ui(qs_data->intervalo.length);
 
-		mpz_sub(Mp,qs_data->intervalo.length,d1);
-		
-		//gmp_printf("p:%Zd, x1:%Zd, x2:%Zd, d1:%Zd, d2:%Zd, Mp:%Zd\n",qs_data->base.primes[i].value,x1,x2,d1,d2,Mp);
-		
-		mpz_t x;
-		mpz_init(x);
+    // Inicializar un array para almacenar resultados
+    double *S = (double*) malloc(intervalo * sizeof(double));
+    memset(S, 0, sizeof(double) * intervalo);
 
-		mpz_mul_si(Mp,Mp,-1);
-		mpz_sub(x1,x1,d2);
-		
-		//gmp_printf("p:%Zd, x1:%Zd, x2:%Zd, d1:%Zd, d2:%Zd, Mp:%Zd\n",qs_data->base.primes[i].value,x1,x2,d1,d2,Mp);
-		for (mpz_set(x,x1); mpz_cmp(x,Mp) == 1 ;)
-		{
-			S[mpz_get_ui(x)] = S[mpz_get_ui(x)] + logp;
-			mpz_sub(x,x,d1);
-			S[mpz_get_ui(x)] = S[mpz_get_ui(x)] + logp;
-			mpz_sub(x,x,d2);
-		}
-		
-		if(mpz_cmp(x,qs_data->intervalo.length) == 1){	
-			S[mpz_get_ui(x)] = S[mpz_get_ui(x)] + logp;
-		}
-		
-		mpz_clears(x1,x2,x,d1,d2,Mp,p,NULL);
-	}
-	
-	//T=log(sqrt(2N)M)
-	
-	mpfr_t T;
-	mpfr_init_set_ui(T,2,MPFR_RNDZ);
-	
-	mpfr_mul_z(T,T,qs_data->n,MPFR_RNDZ);
-	mpfr_sqrt(T,T,MPFR_RNDZ);
-	mpfr_mul_z(T,T,qs_data->intervalo.length,MPFR_RNDZ);
-	mpfr_log(T, T, MPFR_RNDZ);
-	//mpfr_printf ("T:%.2Rf\n", T);
-	
-	mpfr_clear(T);
-	mpz_clears(n,raizn,NULL);
-	return S;
+    mpz_t n, raizn;
+    mpz_inits(n, raizn, NULL);
+
+    // Inicializar n y raizn con los valores correspondientes
+    mpz_set(n, qs_data->n);
+    mpz_sqrt(raizn, n);
+
+    // Determinar el sentido de comparación (cmp) según el tipo de tamizado
+    int cmp = (typeSieving == POSITIVE) ? -1 : 1;
+
+    for (int i = 0; i < qs_data->base.length; i++) {
+        mpz_t x1, x2, p;
+        mpz_inits(x1, x2, p, NULL);
+
+        mpz_set(p, qs_data->base.primes[i].value);
+        double logp = mpfr_get_d(qs_data->base.primes[i].log_value, MPFR_RNDZ);
+
+        // Calcular raíces usando el método de Shanks-Tonelli
+        shanksTonelli(n, p, x1, x2);
+        mpz_sub(x1, x1, raizn);
+        mpz_mod(x1, x1, p);
+
+        mpz_sub(x2, x2, raizn);
+        mpz_mod(x2, x2, p);
+
+        // Intercambiar x1 y x2 si es necesario
+        if (mpz_cmp(x1, x2) == 1) {
+            mpz_t temp;
+            mpz_init(temp);
+            mpz_set(temp, x1);
+            mpz_set(x1, x2);
+            mpz_set(x2, temp);
+            mpz_clear(temp);
+        }
+
+        mpz_t d1, d2, Mp;
+        mpz_inits(d1, d2, Mp, NULL);
+
+        // Calcular diferencias y límite superior Mp
+        mpz_sub(x2, x2, x1);
+        mpz_set(d1, x2);
+        mpz_sub(d2, p, d1);
+        mpz_sub(Mp, qs_data->intervalo.length, d1);
+
+        mpz_t x;
+        mpz_init(x);
+
+        // Ajustar x1 para el tamizado NEGATIVE
+        if (typeSieving == NEGATIVE) {
+            mpz_mul_si(Mp, Mp, -1);
+            mpz_sub(x1, x1, d2);
+        }
+
+        // Realizar el tamizado
+        for (mpz_set(x, x1); mpz_cmp(x, Mp) == cmp;) {
+            S[mpz_get_ui(x)] = S[mpz_get_ui(x)] + logp;
+            
+            if (typeSieving == POSITIVE) {
+                mpz_add(x, x, d1);
+            } else {
+                mpz_sub(x, x, d1);
+            }
+
+            S[mpz_get_ui(x)] = S[mpz_get_ui(x)] + logp;
+
+            if (typeSieving == POSITIVE) {
+                mpz_add(x, x, d2);
+            } else {
+                mpz_sub(x, x, d2);
+            }
+        }
+
+        // Ajustar el último elemento si es necesario
+        if (mpz_cmp(x, qs_data->intervalo.length) == cmp) {
+            S[mpz_get_ui(x)] = S[mpz_get_ui(x)] + logp;
+        }
+
+        mpz_clears(x1, x2, x, d1, d2, Mp, p, NULL);
+    }
+
+    // Calcular T = log(sqrt(2N)M)
+    mpfr_t T;
+    mpfr_init_set_ui(T, 2, MPFR_RNDZ);
+    mpfr_mul_z(T, T, qs_data->n, MPFR_RNDZ);
+    mpfr_sqrt(T, T, MPFR_RNDZ);
+    mpfr_mul_z(T, T, qs_data->intervalo.length, MPFR_RNDZ);
+    mpfr_log(T, T, MPFR_RNDZ);
+    //mpfr_printf ("T:%.2Rf\n", T);
+    mpfr_clear(T);
+
+    mpz_clears(n, raizn, NULL);
+
+    return S;
 }
 
-/** 
-* @brief 
-* @param qs_data: 
-* @return Retorna un array con los numeros Xi que tienen almenos 1 factor de la base
-*/
-double * sievingNaivePositive(qs_struct * qs_data){
-	
-	long intervalo = mpz_get_ui(qs_data->intervalo.length);
-	double *S = (double*) malloc(intervalo*sizeof(double));
-	memset(S,0,sizeof(double)*intervalo);
-	mpz_t n,raizn;
-	mpz_inits(n,raizn,NULL);
-	
-	mpz_set(n,qs_data->n);
-	mpz_sqrt(raizn,n);
-	//gmp_printf("raizn:%Zd",raizn);
-	
-	for (int i = 0; i < qs_data->base.length; i++)
-	{
-		mpz_t x1, x2, p;
-		mpz_inits(x1,x2,p,NULL);	
-		
-		mpz_set(p,qs_data->base.primes[i].value);
-		double logp = mpfr_get_d(qs_data->base.primes[i].log_value,MPFR_RNDZ);
-		shanksTonelli(n,p,x1,x2);
-		//gmp_printf("%Zd,%Zd\n",x1,x2);
-		mpz_sub(x1,x1,raizn);
-		mpz_mod(x1,x1,p);
-		
-		mpz_sub(x2,x2,raizn);
-		mpz_mod(x2,x2,p);
-		//gmp_printf("%Zd,%Zd\n",x1,x2);
-		//si x1>x2 se intercambian
-		if(mpz_cmp(x1,x2)==1){
-			mpz_t temp;
-			mpz_init(temp);
-			mpz_set(temp,x1);
-			mpz_set(x1,x2);
-			mpz_set(x2,temp);
-			mpz_clear(temp);
-		}
-		//gmp_printf("%Zd,%Zd\n",x1,x2);
-		
-		mpz_t d1,d2,Mp;
-		mpz_inits(d1,d2,Mp,NULL);
-		//x1<x2
-		
-		mpz_sub(x2,x2,x1);
-		
-		mpz_set(d1,x2);
-		mpz_sub(d2,p,d1);
+/**
+ * @brief Realiza el proceso de tamizado para identificar números B-suaves en el intervalo.
+ *
+ * Algoritmo tomado del articulo Block Sieving Algorithms Georg (Wambach and Hannes Wettig)
+ * 
+ * @param qs_data Estructura de datos que contiene la información necesaria para el proceso de tamizado.
+ * @param length Puntero para almacenar la longitud del array Xi resultante.
+ * @return Puntero al array Xi que contiene los números B-suaves encontrados en el intervalo.
+ */
+long *sieving(qs_struct *qs_data, long *length) {
+    // TODO: Arreglar el tamaño del array Xi
 
-		mpz_sub(Mp,qs_data->intervalo.length,d1);
-		
-		//gmp_printf("p:%Zd, x1:%Zd, x2:%Zd, d1:%Zd, d2:%Zd, Mp:%Zd\n",qs_data->base.primes[i].value,x1,x2,d1,d2,Mp);
-		
-		mpz_t x;
-		mpz_init(x);
+    // Realizar el tamizado para números B-suaves positivos y negativos
+    double *sp = sievingNaive(qs_data,POSITIVE);
+    double *sn = sievingNaive(qs_data,NEGATIVE);
 
-		for (mpz_set(x,x1); mpz_cmp(x,Mp) == -1 ;)
-		{
-			S[mpz_get_ui(x)] = S[mpz_get_ui(x)] + logp;
-			mpz_add(x,x,d1);
-			S[mpz_get_ui(x)] = S[mpz_get_ui(x)] + logp;
-			mpz_add(x,x,d2);
-		}
-		
-		if(mpz_cmp(x,qs_data->intervalo.length) == -1){	
-			S[mpz_get_ui(x)] = S[mpz_get_ui(x)] + logp;
-		}
-		
-		mpz_clears(x1,x2,x,d1,d2,Mp,p,NULL);
-	}
-	
-	//T=log(sqrt(2N)M)
-	
-	mpfr_t T;
-	mpfr_init_set_ui(T,2,MPFR_RNDZ);
-	
-	mpfr_mul_z(T,T,qs_data->n,MPFR_RNDZ);
-	mpfr_sqrt(T,T,MPFR_RNDZ);
-	mpfr_mul_z(T,T,qs_data->intervalo.length,MPFR_RNDZ);
-	mpfr_log(T, T, MPFR_RNDZ);
-	//mpfr_printf ("T:%.2Rf\n", T);
-	mpfr_clear(T);
-	
-	mpz_clears(n,raizn,NULL);
-	return S;
-}
+    // Calcular la longitud total del array Xi
+    long intervalLength = mpz_get_ui(qs_data->intervalo.length);
+    long *Xi = (long *)malloc((intervalLength * 2) * sizeof(long));
+    long contXi = 0;
 
-/** 
-* @brief 
-* @param qs_data: 
-* @param out length:
-* @return 
-*/
-long * sieving(qs_struct * qs_data, long *length){
-	//TODO:Arreglar el tamaño del array Xi
-	double *sp = sievingNaivePositive(qs_data);
-	double *sn = sievingNaiveNegative(qs_data);
-	long intervalLength = mpz_get_ui(qs_data->intervalo.length);
-	long * Xi = (long*)malloc((intervalLength*2)*sizeof(long));
-	long contXi=0;
-	
-	mpz_t raizn;
-	mpz_init(raizn);
-	mpz_sqrt(raizn,qs_data->n);
-	unsigned long raiznl = mpz_get_ui(raizn);
-	for (long i = 0; i < intervalLength; i++)
-	{
-		if(sp[i]>3){
-			Xi[contXi] = (i+raiznl);
-			contXi++;
-			//printf("%ld:%f\n",i,sp[i]);
-		}
-		
-		if(sn[i]>3){
-			Xi[contXi] = (-i+raiznl);
-			contXi++;
-			//printf("-%ld:%f\n",i,sn[i]);
-		}
-	}
-	
-	*length = contXi;
-	
-	free(sp);
-	free(sn);
-	mpz_clear(raizn);
-	return Xi;
+    // Calcular la raíz cuadrada de n para determinar el rango de valores Xi
+    mpz_t raizn;
+    mpz_init(raizn);
+    mpz_sqrt(raizn, qs_data->n);
+    unsigned long raiznl = mpz_get_ui(raizn);
+
+    // Llenar el array Xi con números B-suaves positivos y negativos
+    for (long i = 0; i < intervalLength; i++) {
+        if (sp[i] > 3) {
+            Xi[contXi] = (i + raiznl);
+            contXi++;
+        }
+
+        if (sn[i] > 3) {
+            Xi[contXi] = (-i + raiznl);
+            contXi++;
+        }
+    }
+
+    // Almacenar la longitud final del array Xi
+    *length = contXi;
+
+    // Liberar memoria utilizada en el tamizado
+    free(sp);
+    free(sn);
+    mpz_clear(raizn);
+
+    // Devolver el array Xi resultante
+    return Xi;
 }
 
 	

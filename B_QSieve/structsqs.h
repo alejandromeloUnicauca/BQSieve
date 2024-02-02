@@ -109,3 +109,7 @@ typedef struct{
 	int n_div;
 }data_divT;
 
+enum TypeSieving{
+	POSITIVE,
+	NEGATIVE
+};
