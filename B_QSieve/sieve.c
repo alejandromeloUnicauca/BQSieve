@@ -5,6 +5,8 @@
 #include <mpfr.h>
 #include "structsqs.h"
 #include <string.h>
+#include <omp.h>
+#include <time.h>
 
 /** 
 * @brief 
@@ -148,6 +150,9 @@ int shanksTonelli(mpz_t n, mpz_t p, mpz_t r1, mpz_t r2) {
  *         El usuario es responsable de liberar la memoria asignada para este array.
  */
 double * sievingNaive(qs_struct * qs_data, enum TypeSieving typeSieving) {
+	// printf("Sieving from process: %d\n", omp_get_thread_num());
+	// clock_t t_inicio, t_final;
+	// t_inicio = omp_get_wtime();
     // Obtener la longitud del intervalo
     long intervalo = mpz_get_ui(qs_data->intervalo.length);
 
@@ -247,6 +252,9 @@ double * sievingNaive(qs_struct * qs_data, enum TypeSieving typeSieving) {
 
     mpz_clears(n, raizn, NULL);
 
+	// t_final = omp_get_wtime();;
+	// double segundosCriba = (t_final-t_inicio);
+	// printf("Fin sieving from process: %d %fs\n", omp_get_thread_num(),segundosCriba);
     return S;
 }
 
@@ -259,25 +267,33 @@ double * sievingNaive(qs_struct * qs_data, enum TypeSieving typeSieving) {
  * @param length Puntero para almacenar la longitud del array Xi resultante.
  * @return Puntero al array Xi que contiene los números B-suaves encontrados en el intervalo.
  */
-long *sieving(qs_struct *qs_data, long *length) {
-    // TODO: Arreglar el tamaño del array Xi
+unsigned long *sieving(qs_struct *qs_data, long *length) {
 
-    // Realizar el tamizado para números B-suaves positivos y negativos
-    double *sp = sievingNaive(qs_data,POSITIVE);
-    double *sn = sievingNaive(qs_data,NEGATIVE);
-
-    // Calcular la longitud total del array Xi
     long intervalLength = mpz_get_ui(qs_data->intervalo.length);
-    long *Xi = (long *)malloc((intervalLength * 2) * sizeof(long));
+    unsigned long *Xi = (unsigned long *)malloc((intervalLength * 2) * sizeof(unsigned long));
     long contXi = 0;
 
-    // Calcular la raíz cuadrada de n para determinar el rango de valores Xi
     mpz_t raizn;
     mpz_init(raizn);
     mpz_sqrt(raizn, qs_data->n);
     unsigned long raiznl = mpz_get_ui(raizn);
 
-    // Llenar el array Xi con números B-suaves positivos y negativos
+    double *sp, *sn;
+
+    #pragma omp parallel
+    #pragma omp single
+    {
+        #pragma omp task
+        sp = sievingNaive(qs_data, POSITIVE);
+
+        #pragma omp task
+        sn = sievingNaive(qs_data, NEGATIVE);
+
+        #pragma omp taskwait
+    }
+
+
+    // Código después de que ambas tareas hayan terminado
     for (long i = 0; i < intervalLength; i++) {
         if (sp[i] > 3) {
             Xi[contXi] = (i + raiznl);
@@ -290,7 +306,6 @@ long *sieving(qs_struct *qs_data, long *length) {
         }
     }
 
-    // Almacenar la longitud final del array Xi
     *length = contXi;
 
     // Liberar memoria utilizada en el tamizado

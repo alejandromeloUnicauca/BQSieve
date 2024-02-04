@@ -3,6 +3,7 @@
 #include <getopt.h>
 #include <math.h>
 #include <mpfr.h>
+#include <omp.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,6 +12,7 @@
 #include "polynomial.h"
 #include "factoring.h"
 #include <time.h>
+
 
 void createBlocks(int n, qs_struct * qs_data);
 void crearMatrizNula(qs_struct * qs_data);
@@ -131,7 +133,7 @@ int main(int argc, char **argv)
 	t_final = clock();
 	printf("Base de primos generada. %d primos en la base\n",residuos);
 	
-	double segundos = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;
+	double segundos = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;;
 	printf("tiempo de creacion de la base:%fs\n",segundos);
 	
 	//Crear bloques de la base
@@ -149,11 +151,11 @@ int main(int argc, char **argv)
 	long lengthXi = 0;
 	
 	printf("Cribando...\n");
-	t_inicio = clock();
-	long *Xi = sieving(&qs_data,&lengthXi); 
-	t_final = clock();
-	double segundosCriba = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;
-	printf("tiempo de cribado:%fs\n",segundosCriba);	
+	t_inicio = omp_get_wtime();
+	unsigned long *Xi = sieving(&qs_data,&lengthXi); 
+	t_final = omp_get_wtime();
+	double segundosCriba = t_final-t_inicio;
+	printf("tiempo de cribado:%lfs\n",segundosCriba);	
 	
 	
 	qs_data.intervalo.length_Xi = lengthXi;
@@ -162,16 +164,16 @@ int main(int argc, char **argv)
 	
 	printf("Calculando Polinomio...\n");
 	t_inicio = clock();
-	unsigned long endPos = 0;
-	long numLote = 1;
-	//fermat(&qs_data);
 	crearMatrizNula(&qs_data);
 
 	int res = 1;
 	unsigned long posXi = 0;
 	unsigned long sizeLote = 150000;
+	unsigned long endPos = 0;
+	long numLote = 1;
+
 	while(endPos<lengthXi && res==1){
-		endPos=fermat2(&qs_data,numLote++,sizeLote);
+		endPos=fermat(&qs_data,numLote++,sizeLote);
 		if(qs_data.blocks.length > 0){
 			res = factoringBlocks(&qs_data,sizeLote,posXi*sizeLote);
 		}
@@ -185,22 +187,6 @@ int main(int argc, char **argv)
 	t_final = clock();
 	double segundosPolinomio = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;
 	printf("tiempo de calculo del polinomio:%fs\n",segundosPolinomio);	
-	
-	
-	
-	/*printf("Factorizando...\n");
-	t_inicio = clock();
-	if(qs_data.blocks.length > 0){
-		factoringBlocks(&qs_data);
-	}
-	else{
-		factoringTrial(&qs_data,0,qs_data.intervalo.length_Qxi);  
-	}
-	t_final = clock();
-	double segundosFactorizacion = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;
-	printf("tiempo de factorizacion:%fs\n",segundosFactorizacion);	
-	
-	printf("tiempo de Total:%fs\n",segundosCriba+segundosPolinomio+segundosFactorizacion);	*/
 	
 	printf("Escribiendo matriz...");
 	imprimirMatriz(qs_data.mat);
