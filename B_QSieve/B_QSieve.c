@@ -171,7 +171,7 @@ int main(int argc, char **argv)
 	unsigned long posXi = 0;
 	unsigned long sizeLote = 150000;
 	while(endPos<lengthXi && res==1){
-		endPos=fermat2(&qs_data,numLote++,sizeLote);
+		endPos=fermat(&qs_data,numLote++,sizeLote);
 		if(qs_data.blocks.length > 0){
 			res = factoringBlocks(&qs_data,sizeLote,posXi*sizeLote);
 		}
@@ -186,22 +186,7 @@ int main(int argc, char **argv)
 	double segundosPolinomio = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;
 	printf("tiempo de calculo del polinomio:%fs\n",segundosPolinomio);	
 	
-	
-	
-	/*printf("Factorizando...\n");
-	t_inicio = clock();
-	if(qs_data.blocks.length > 0){
-		factoringBlocks(&qs_data);
-	}
-	else{
-		factoringTrial(&qs_data,0,qs_data.intervalo.length_Qxi);  
-	}
-	t_final = clock();
-	double segundosFactorizacion = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;
-	printf("tiempo de factorizacion:%fs\n",segundosFactorizacion);	
-	
-	printf("tiempo de Total:%fs\n",segundosCriba+segundosPolinomio+segundosFactorizacion);	*/
-	
+		
 	printf("Escribiendo matriz...");
 	imprimirMatriz(qs_data.mat);
 	

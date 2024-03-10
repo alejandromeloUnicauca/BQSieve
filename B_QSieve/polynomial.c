@@ -5,27 +5,6 @@
 #include "structsqs.h"
 
 
-void fermat(qs_struct * qs_data){
-	//TODO:mejorar manejo de memoria
-	mpz_t * Qxi;	
-	
-	Qxi = (mpz_t*)malloc((qs_data->intervalo.length_Xi)*sizeof(mpz_t));
-	for (long i = 0; i < qs_data->intervalo.length_Xi; i++)
-	{
-		mpz_init(Qxi[i]);
-		//printf("%ld\n,",qs_data->intervalo.Xi[i]);
-		mpz_set_si(Qxi[i],qs_data->intervalo.Xi[i]);
-		mpz_pow_ui(Qxi[i],Qxi[i],2);
-		mpz_sub(Qxi[i],Qxi[i],qs_data->n);
-		//gmp_printf("%Zd,",Qxi[i]);
-	}
-	
-	qs_data->intervalo.Qxi = Qxi;
-	//printf("size fin:%ld,",qs_data->intervalo.length_Qxi);
-	qs_data->intervalo.length_Qxi = qs_data->intervalo.length_Xi;
-}
-
-
 /**
  * @brief Calcula los valores de la factorización de Fermat en un rango de posiciones.
  *
@@ -39,7 +18,7 @@ void fermat(qs_struct * qs_data){
  *
  * @return La última posición calculada dentro del rango especificado.
  */
-unsigned long fermat2(qs_struct *qs_data, unsigned long numLote, unsigned long numPosiciones){
+unsigned long fermat(qs_struct *qs_data, unsigned long numLote, unsigned long numPosiciones){
 	unsigned long posXi = (numLote-1)*numPosiciones;
 	unsigned long lastProcessedPosition = 0;
     unsigned long endPosition = numLote * numPosiciones;
