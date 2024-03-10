@@ -5,3 +5,4 @@ B_QSieve/outputbwc.txt
 B_QSieve/pos.txt
 B_QSieve/salidap.txt
 B_QSieve/salida.txt
+B_QSieve/*.o
