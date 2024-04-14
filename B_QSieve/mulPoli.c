@@ -58,7 +58,7 @@ int main(int argc, char * argv[]){
 	/*mpz_out_str(stdout,10,qx);
 	printf("\n");*/
 	int res = mpz_perfect_square_p(qx);
-	printf("%d\n",res);
+	//printf("%d\n",res);
 	
 	if(res!=0)
 	{
