@@ -80,7 +80,6 @@ int shanksTonelli(mpz_t n, mpz_t p, mpz_t r1, mpz_t r2) {
 		
 		while (1)
 		{
-			
 			if (mpz_cmp_ui(t,1) == 0)
 			{
 				mpz_set(r1,r);
@@ -148,6 +147,7 @@ int shanksTonelli(mpz_t n, mpz_t p, mpz_t r1, mpz_t r2) {
  *         El usuario es responsable de liberar la memoria asignada para este array.
  */
 double * sievingNaive(qs_struct * qs_data, enum TypeSieving typeSieving) {
+    //TODO:Cribado por bloques? se usa mucha memoria al inicializar el array completo para todo el intervalo
     // Obtener la longitud del intervalo
     long intervalo = mpz_get_ui(qs_data->intervalo.length);
 
@@ -182,12 +182,7 @@ double * sievingNaive(qs_struct * qs_data, enum TypeSieving typeSieving) {
 
         // Intercambiar x1 y x2 si es necesario
         if (mpz_cmp(x1, x2) == 1) {
-            mpz_t temp;
-            mpz_init(temp);
-            mpz_set(temp, x1);
-            mpz_set(x1, x2);
-            mpz_set(x2, temp);
-            mpz_clear(temp);
+            mpz_swap(x1,x2);
         }
 
         mpz_t d1, d2, Mp;
@@ -235,16 +230,6 @@ double * sievingNaive(qs_struct * qs_data, enum TypeSieving typeSieving) {
         mpz_clears(x1, x2, x, d1, d2, Mp, p, NULL);
     }
 
-    // Calcular T = log(sqrt(2N)M)
-    mpfr_t T;
-    mpfr_init_set_ui(T, 2, MPFR_RNDZ);
-    mpfr_mul_z(T, T, qs_data->n, MPFR_RNDZ);
-    mpfr_sqrt(T, T, MPFR_RNDZ);
-    mpfr_mul_z(T, T, qs_data->intervalo.length, MPFR_RNDZ);
-    mpfr_log(T, T, MPFR_RNDZ);
-    //mpfr_printf ("T:%.2Rf\n", T);
-    mpfr_clear(T);
-
     mpz_clears(n, raizn, NULL);
 
     return S;
@@ -259,9 +244,9 @@ double * sievingNaive(qs_struct * qs_data, enum TypeSieving typeSieving) {
  * @param length Puntero para almacenar la longitud del array Xi resultante.
  * @return Puntero al array Xi que contiene los números B-suaves encontrados en el intervalo.
  */
-unsigned long *sieving(qs_struct *qs_data, long *length) {
+unsigned long *sieving(qs_struct *qs_data, unsigned long *length) {
 
-    long intervalLength = mpz_get_ui(qs_data->intervalo.length);
+    unsigned long intervalLength = mpz_get_ui(qs_data->intervalo.length);
     unsigned long *Xi = (unsigned long *)malloc((intervalLength * 2) * sizeof(unsigned long));
     long contXi = 0;
 
@@ -273,25 +258,42 @@ unsigned long *sieving(qs_struct *qs_data, long *length) {
     double *sp, *sn;
 
     sp = sievingNaive(qs_data, POSITIVE);
-    sn = sievingNaive(qs_data, NEGATIVE);
 
-    for (long i = 0; i < intervalLength; i++) {
-        if (sp[i] > 3) {
+
+    /*
+    // Calcular T = log(sqrt(2N)M)
+    mpfr_t T;
+    mpfr_init_set_ui(T, 2, MPFR_RNDZ);
+    mpfr_mul_z(T, T, qs_data->n, MPFR_RNDZ);
+    mpfr_sqrt(T, T, MPFR_RNDZ);
+    mpfr_mul_z(T, T, qs_data->intervalo.length, MPFR_RNDZ);
+    mpfr_log(T, T, MPFR_RNDZ);
+    //mpfr_printf ("T:%.2Rf\n", T);
+    mpfr_clear(T);*/
+
+    //TODO:calcular delta para usar T = log(sqrt(2N)M)-Delta en if 
+    for (unsigned long i = 0; i < intervalLength; i++) {
+        if (sp[i] > 48) {
             Xi[contXi] = (i + raiznl);
             contXi++;
         }
+    }
+    
+    free(sp);
 
-        if (sn[i] > 3) {
+    sn = sievingNaive(qs_data, NEGATIVE);
+    for (unsigned long i = 0; i < intervalLength; i++) {
+        if (sn[i] > 48) {
             Xi[contXi] = (-i + raiznl);
             contXi++;
         }
     }
+    free(sn);
 
     *length = contXi;
 
     // Liberar memoria utilizada en el tamizado
-    free(sp);
-    free(sn);
+
     mpz_clear(raizn);
 
     // Devolver el array Xi resultante

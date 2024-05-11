@@ -17,7 +17,7 @@ void crearMatrizNula(qs_struct * qs_data);
 void imprimirMatriz(matrix matriz);  
 void getPrimesBaseLength(mpz_t n, long * result);
 void getIntervalLength(mpz_t n, mpz_t result);
-int generatePrimesBase(mpz_t n, long base_length, prime * primes);
+long generatePrimesBase(mpz_t n, long base_length, prime * primes);
 void freeStruct(qs_struct * qs_data);
 void usage();
 
@@ -127,10 +127,13 @@ int main(int argc, char **argv)
 	
 	t_inicio = clock();
 	printf("Generando base de primos...\n");
-	int residuos = generatePrimesBase(qs_data.n,qs_data.base.length,qs_data.base.primes);
+	long residuos = generatePrimesBase(qs_data.n,qs_data.base.length,qs_data.base.primes);
 	t_final = clock();
-	printf("Base de primos generada. %d primos en la base\n",residuos);
-	
+	printf("Base de primos generada. %ld primos en la base\n",residuos);
+
+	gmp_printf("P:%Zd",qs_data.base.primes[residuos-1].value);
+	mpfr_printf ("log(p):%.2Rf\n", qs_data.base.primes[residuos-1].log_value);
+
 	double segundos = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;
 	printf("tiempo de creacion de la base:%fs\n",segundos);
 	
@@ -146,7 +149,7 @@ int main(int argc, char **argv)
 		printf("tiempo de creacion de los bloques:%fs\n",segundos);	
 	}
 	
-	long lengthXi = 0;
+	unsigned long lengthXi = 0;
 	
 	printf("Cribando...\n");
 	t_inicio = clock();
@@ -155,7 +158,7 @@ int main(int argc, char **argv)
 	double segundosCriba = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;
 	printf("tiempo de cribado:%fs\n",segundosCriba);	
 	
-	
+	printf("Intervalo despues del cribado:%ld\n",lengthXi);
 	qs_data.intervalo.length_Xi = lengthXi;
 	qs_data.intervalo.length_Qxi = qs_data.intervalo.length_Xi;
 	qs_data.intervalo.Xi = Xi;
@@ -372,9 +375,9 @@ void freeStruct(qs_struct * qs_data){
  * @return retorna el numero de 
  * residuos encontrados
  */
-int generatePrimesBase(mpz_t n, long base_length, prime * primes){
+long generatePrimesBase(mpz_t n, long base_length, prime * primes){
 	//TODO:Quitar archivo de residuos.txt
-	int contRes = 0;//contador de residuos encontrados
+	long contRes = 0;//contador de residuos encontrados
 
 	mpz_t p;//variable temporal para los primos del archivo
 	mpz_init(p);
@@ -387,7 +390,7 @@ int generatePrimesBase(mpz_t n, long base_length, prime * primes){
 	}
 	fclose(fr);
 	
-	int contn = 0;//contador de primos que se ultilizan de primes.txt
+	long contn = 0;//contador de primos que se ultilizan de primes.txt
 	
 	//si el archivo primes.txt no existe termina
 	if ((file = fopen("primes.txt", "r")) == NULL) // open file
@@ -440,7 +443,7 @@ int generatePrimesBase(mpz_t n, long base_length, prime * primes){
 	}
 	mpz_clear(p);
 	fclose(file);
-	printf("Se usaron %d primos\n",contn);  
+	printf("Se usaron %ld primos\n",contn);  
 	return contRes;
 }
 
