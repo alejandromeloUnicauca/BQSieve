@@ -11,12 +11,17 @@ MATRIX_CW_BIN="matrix.cw.bin"
 
 
 def main():
-    if len(sys.argv) < 2 or sys.argv[1] == "-h":
+    if len(sys.argv) > 2 and sys.argv[1] == "-h":
         num = int(sys.argv[2], 16)
     else:
         num = int(sys.argv[2])
 
-    exit_status = subprocess.run(["./B_QSieve", sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]]).returncode
+    
+    if len(sys.argv) > 3:
+        exit_status = subprocess.run(["./B_QSieve", sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]]).returncode
+    else:
+        exit_status = subprocess.run(["./B_QSieve", sys.argv[1], sys.argv[2]]).returncode
+
     print("exit_status",exit_status)
     if exit_status != 0:
         remove_temp_files()

@@ -19,6 +19,7 @@
  * @return La última posición calculada dentro del rango especificado.
  */
 unsigned long fermat(qs_struct *qs_data, unsigned long numLote, unsigned long numPosiciones){
+
 	unsigned long posXi = (numLote-1)*numPosiciones;
     unsigned long endPosition = numLote * numPosiciones;
     
@@ -33,7 +34,9 @@ unsigned long fermat(qs_struct *qs_data, unsigned long numLote, unsigned long nu
         for (unsigned long i = 0; i < numPosiciones; i++) {
             mpz_clear(qs_data->intervalo.Qxi[i]);
         }
+
         free(qs_data->intervalo.Qxi);
+        qs_data->intervalo.Qxi = NULL;
     }
 	
 	//Se asigna memoria para el array Qxi

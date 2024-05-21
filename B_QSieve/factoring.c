@@ -79,7 +79,6 @@ void agregarAVectorBlock(qs_struct * qs_data, div_data_table * block_table){
 }
 
 int blockDivision(mpz_t Qxi, qs_struct * qs_data){
-	//TODO:optimizar memoria
 	div_data_table block_table;
 	block_table.data = (div_data*)malloc((qs_data->base.length+1)*sizeof(div_data));
 	mpz_t QxiTemp;
@@ -121,10 +120,14 @@ int blockDivision(mpz_t Qxi, qs_struct * qs_data){
 		agregarAVectorBlock(qs_data, &block_table);
 		mpz_clears(QxiTemp,gcd,gcdAnt,NULL);
 		//Todo Liberar memoria de data->gcd
-		free(block_table.data);
+		if(block_table.data!=NULL){
+			free(block_table.data);
+		}
 		return 1;
 	}else{
-		free(block_table.data);
+		if(block_table.data!=NULL){
+			free(block_table.data);
+		}
 		mpz_clears(QxiTemp,gcd,gcdAnt,NULL);
 		return 0;
 	}

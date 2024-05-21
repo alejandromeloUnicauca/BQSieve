@@ -260,20 +260,22 @@ unsigned long *sieving(qs_struct *qs_data, unsigned long *length) {
     sp = sievingNaive(qs_data, POSITIVE);
 
 
-    /*
-    // Calcular T = log(sqrt(2N)M)
+    
+    // Calcular T = log(sqrt(2N)M)-Delta (Delta = log(ultimo primo base))
+    //Se escoge Delta segun Factoring large integers using parallel Quadratic Sieve (Olof Åsbrink and Joel Brynielsson)
     mpfr_t T;
     mpfr_init_set_ui(T, 2, MPFR_RNDZ);
     mpfr_mul_z(T, T, qs_data->n, MPFR_RNDZ);
     mpfr_sqrt(T, T, MPFR_RNDZ);
     mpfr_mul_z(T, T, qs_data->intervalo.length, MPFR_RNDZ);
     mpfr_log(T, T, MPFR_RNDZ);
+    mpfr_sub(T,T,qs_data->base.primes[qs_data->base.length-1].log_value,MPFR_RNDZ);
     //mpfr_printf ("T:%.2Rf\n", T);
-    mpfr_clear(T);*/
+
 
     //TODO:calcular delta para usar T = log(sqrt(2N)M)-Delta en if 
     for (unsigned long i = 0; i < intervalLength; i++) {
-        if (sp[i] > 48) {
+        if (sp[i] > mpfr_get_ui(T,MPFR_RNDZ)) {
             Xi[contXi] = (i + raiznl);
             contXi++;
         }
@@ -283,7 +285,7 @@ unsigned long *sieving(qs_struct *qs_data, unsigned long *length) {
 
     sn = sievingNaive(qs_data, NEGATIVE);
     for (unsigned long i = 0; i < intervalLength; i++) {
-        if (sn[i] > 48) {
+        if (sn[i] > mpfr_get_ui(T,MPFR_RNDZ)) {
             Xi[contXi] = (-i + raiznl);
             contXi++;
         }
@@ -295,6 +297,7 @@ unsigned long *sieving(qs_struct *qs_data, unsigned long *length) {
     // Liberar memoria utilizada en el tamizado
 
     mpz_clear(raizn);
+    mpfr_clear(T);
 
     // Devolver el array Xi resultante
     return Xi;

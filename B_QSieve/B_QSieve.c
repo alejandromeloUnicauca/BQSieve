@@ -131,9 +131,6 @@ int main(int argc, char **argv)
 	t_final = clock();
 	printf("Base de primos generada. %ld primos en la base\n",residuos);
 
-	gmp_printf("P:%Zd",qs_data.base.primes[residuos-1].value);
-	mpfr_printf ("log(p):%.2Rf\n", qs_data.base.primes[residuos-1].log_value);
-
 	double segundos = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;
 	printf("tiempo de creacion de la base:%fs\n",segundos);
 	
@@ -172,7 +169,9 @@ int main(int argc, char **argv)
 
 	int res = 1;
 	unsigned long posXi = 0;
-	unsigned long sizeLote = 150000;
+	unsigned long sizeLote = 1500;
+	//Se asigna NULL al intervalo de polinomio inicial 
+	qs_data.intervalo.Qxi = NULL;
 	while(endPos<lengthXi && res==1){
 		endPos=fermat(&qs_data,numLote++,sizeLote);
 		if(qs_data.blocks.length > 0){
