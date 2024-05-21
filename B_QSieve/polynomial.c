@@ -19,8 +19,8 @@
  * @return La última posición calculada dentro del rango especificado.
  */
 unsigned long fermat(qs_struct *qs_data, unsigned long numLote, unsigned long numPosiciones){
+
 	unsigned long posXi = (numLote-1)*numPosiciones;
-	unsigned long lastProcessedPosition = 0;
     unsigned long endPosition = numLote * numPosiciones;
     
     if (endPosition > qs_data->intervalo.length_Xi) {
@@ -34,7 +34,9 @@ unsigned long fermat(qs_struct *qs_data, unsigned long numLote, unsigned long nu
         for (unsigned long i = 0; i < numPosiciones; i++) {
             mpz_clear(qs_data->intervalo.Qxi[i]);
         }
+
         free(qs_data->intervalo.Qxi);
+        qs_data->intervalo.Qxi = NULL;
     }
 	
 	//Se asigna memoria para el array Qxi
@@ -44,17 +46,22 @@ unsigned long fermat(qs_struct *qs_data, unsigned long numLote, unsigned long nu
         exit(EXIT_FAILURE);
     }
     
+    unsigned long i;
 
-    for (unsigned long i = 0; i < endPosition; i++) {
+    for (i = 0; i < endPosition; i++) {
+        mpz_t tempSub;
+        mpz_init(tempSub);
 		mpz_init(qs_data->intervalo.Qxi[i]);
         //printf("%ld\n,", qs_data->intervalo.Xi[i]);
         mpz_set_si(qs_data->intervalo.Qxi[i], qs_data->intervalo.Xi[posXi]);
         mpz_pow_ui(qs_data->intervalo.Qxi[i], qs_data->intervalo.Qxi[i], 2);
-        mpz_sub(qs_data->intervalo.Qxi[i], qs_data->intervalo.Qxi[i], qs_data->n);
+        mpz_sub(tempSub, qs_data->intervalo.Qxi[i], qs_data->n);
+        mpz_swap(qs_data->intervalo.Qxi[i],tempSub);
         //gmp_printf("%Zd,", qs_data->intervalo.Qxi[i]);
-        lastProcessedPosition = i;
         posXi++;
+        mpz_clear(tempSub);
 	}
-	return lastProcessedPosition;
+
+	return i;
 }
 
