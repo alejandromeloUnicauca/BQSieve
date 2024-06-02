@@ -111,7 +111,7 @@ int main(int argc, char **argv)
 	gmp_printf("N:%Zd\n", qs_data.n);
 	
 	//digitos de N
-	size_t sizeN = mpz_sizeinbase(qs_data.n, 10)-1;
+	size_t sizeN = mpz_sizeinbase(qs_data.n, 10);
 	printf("Numero de digitos decimales: %zu\n",sizeN);
 	
 	//longitud de la base de primos
