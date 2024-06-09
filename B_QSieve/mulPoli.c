@@ -97,7 +97,7 @@ int main(int argc, char * argv[]){
 		
 		
 		//printf("%d",mpz_perfect_square_p(mulX));
-		int con = mpz_congruent_p(qx,mulX,n);
+		mpz_congruent_p(qx,mulX,n);
 		//printf("con:%d",con);
 		/*printf("sqrt:");
 		mpz_out_str(stdout,10,sqr);
