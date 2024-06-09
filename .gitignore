@@ -5,10 +5,5 @@ B_QSieve/outputbwc.txt
 B_QSieve/pos.txt
 B_QSieve/salidap.txt
 B_QSieve/salida.txt
-B_QSieve/*.oB_QSieve/mulPoli
-B_QSieve/mulPoli
-B_QSieve/polynomial.o
-B_QSieve/factoring.o
-B_QSieve/B_QSieve.o
-B_QSieve/mulPoli.o
-B_QSieve/sieve.o
+B_QSieve/*.o
+B_QSieve/mulpoli
