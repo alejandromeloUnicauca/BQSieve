@@ -255,12 +255,6 @@ unsigned long *sieving(qs_struct *qs_data, unsigned long *length) {
     mpz_sqrt(raizn, qs_data->n);
     unsigned long raiznl = mpz_get_ui(raizn);
 
-    float *sp, *sn;
-
-    sp = sievingNaive(qs_data, POSITIVE);
-
-
-    
     // Calcular T = log(sqrt(2N)M)-Delta (Delta = log(ultimo primo base))
     //Se escoge Delta segun Factoring large integers using parallel Quadratic Sieve (Olof Åsbrink and Joel Brynielsson)
     mpfr_t T;
@@ -272,6 +266,9 @@ unsigned long *sieving(qs_struct *qs_data, unsigned long *length) {
     mpfr_sub(T,T,qs_data->base.primes[qs_data->base.length-1].log_value,MPFR_RNDZ);
     //mpfr_printf ("T:%.2Rf\n", T);
 
+    float *sp, *sn;
+
+    sp = sievingNaive(qs_data, POSITIVE);
 
     //TODO:calcular delta para usar T = log(sqrt(2N)M)-Delta en if 
     for (unsigned long i = 0; i < intervalLength; i++) {
