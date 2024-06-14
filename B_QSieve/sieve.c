@@ -170,6 +170,7 @@ float * sievingNaive(qs_struct * qs_data, enum TypeSieving typeSieving) {
     // Determinar el sentido de comparación (cmp) según el tipo de tamizado
     int cmp = (typeSieving == POSITIVE) ? -1 : 1;
 
+    #pragma omp parallel for
     for (int i = 0; i < qs_data->base.length; i++) {
         mpz_t x1, x2, p;
         mpz_inits(x1, x2, p, NULL);
@@ -210,6 +211,7 @@ float * sievingNaive(qs_struct * qs_data, enum TypeSieving typeSieving) {
 
         // Realizar el tamizado
         for (mpz_set(x, x1); mpz_cmp(x, Mp) == cmp;) {
+            #pragma omp atomic
             S[mpz_get_ui(x)] = S[mpz_get_ui(x)] + logp;
             
             if (typeSieving == POSITIVE) {
@@ -218,6 +220,7 @@ float * sievingNaive(qs_struct * qs_data, enum TypeSieving typeSieving) {
                 mpz_sub(x, x, d1);
             }
 
+            #pragma omp atomic
             S[mpz_get_ui(x)] = S[mpz_get_ui(x)] + logp;
 
             if (typeSieving == POSITIVE) {
@@ -229,6 +232,7 @@ float * sievingNaive(qs_struct * qs_data, enum TypeSieving typeSieving) {
 
         // Ajustar el último elemento si es necesario
         if (mpz_cmp(x, qs_data->intervalo.length) == cmp) {
+            #pragma omp atomic
             S[mpz_get_ui(x)] = S[mpz_get_ui(x)] + logp;
         }
 
