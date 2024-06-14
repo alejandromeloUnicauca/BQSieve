@@ -146,14 +146,14 @@ int shanksTonelli(mpz_t n, mpz_t p, mpz_t r1, mpz_t r2) {
  * @return Puntero a un array de números Xi que tienen al menos un factor de la base.
  *         El usuario es responsable de liberar la memoria asignada para este array.
  */
-double * sievingNaive(qs_struct * qs_data, enum TypeSieving typeSieving) {
+float * sievingNaive(qs_struct * qs_data, enum TypeSieving typeSieving) {
     //TODO:Cribado por bloques? se usa mucha memoria al inicializar el array completo para todo el intervalo
     // Obtener la longitud del intervalo
     long intervalo = mpz_get_ui(qs_data->intervalo.length);
 
     // Inicializar un array para almacenar resultados
-    double *S = (double*) malloc(intervalo * sizeof(double));
-    memset(S, 0, sizeof(double) * intervalo);
+    float *S = (float*) malloc(intervalo * sizeof(float));
+    memset(S, 0, sizeof(float) * intervalo);
 
     mpz_t n, raizn;
     mpz_inits(n, raizn, NULL);
@@ -170,7 +170,7 @@ double * sievingNaive(qs_struct * qs_data, enum TypeSieving typeSieving) {
         mpz_inits(x1, x2, p, NULL);
 
         mpz_set(p, qs_data->base.primes[i].value);
-        double logp = mpfr_get_d(qs_data->base.primes[i].log_value, MPFR_RNDZ);
+        float logp = mpfr_get_flt(qs_data->base.primes[i].log_value, MPFR_RNDZ);
 
         // Calcular raíces usando el método de Shanks-Tonelli
         shanksTonelli(n, p, x1, x2);
@@ -255,7 +255,7 @@ unsigned long *sieving(qs_struct *qs_data, unsigned long *length) {
     mpz_sqrt(raizn, qs_data->n);
     unsigned long raiznl = mpz_get_ui(raizn);
 
-    double *sp, *sn;
+    float *sp, *sn;
 
     sp = sievingNaive(qs_data, POSITIVE);
 
