@@ -150,7 +150,6 @@ int shanksTonelli(mpz_t n, mpz_t p, mpz_t r1, mpz_t r2) {
  */
 float * sievingNaive(qs_struct * qs_data, enum TypeSieving typeSieving) {
     long intervalo = mpz_get_ui(qs_data->intervalo.length);
-
     // Inicializar un array para almacenar resultados
     float *S = (float*) malloc(intervalo * sizeof(float));
     memset(S, 0, sizeof(float) * intervalo);
@@ -165,11 +164,15 @@ float * sievingNaive(qs_struct * qs_data, enum TypeSieving typeSieving) {
     // Determinar el sentido de comparación (cmp) según el tipo de tamizado
     int cmp = (typeSieving == POSITIVE) ? -1 : 1;
 
+    #pragma omp parallel for schedule(dynamic) num_threads(1)
     for (int i = 0; i < qs_data->base.length; i++) {
         mpz_t x1, x2, p;
         mpz_inits(x1, x2, p, NULL);
 
         mpz_set(p, qs_data->base.primes[i].value);
+
+        //printf("Iteracion: %d con primo:%ld desde hilo:%d, positivo:%d\n",i, mpz_get_ui(p), omp_get_thread_num(),typeSieving);
+
         float logp = mpfr_get_flt(qs_data->base.primes[i].log_value, MPFR_RNDZ);
 
         // Calcular raíces usando el método de Shanks-Tonelli
@@ -205,7 +208,8 @@ float * sievingNaive(qs_struct * qs_data, enum TypeSieving typeSieving) {
 
         // Realizar el tamizado
         for (mpz_set(x, x1); mpz_cmp(x, Mp) == cmp;) {
-            S[mpz_get_ui(x)] = S[mpz_get_ui(x)] + logp;
+            #pragma omp atomic
+                S[mpz_get_ui(x)] = S[mpz_get_ui(x)] + logp;
             
             if (typeSieving == POSITIVE) {
                 mpz_add(x, x, d1);
@@ -213,7 +217,8 @@ float * sievingNaive(qs_struct * qs_data, enum TypeSieving typeSieving) {
                 mpz_sub(x, x, d1);
             }
 
-            S[mpz_get_ui(x)] = S[mpz_get_ui(x)] + logp;
+            #pragma omp atomic
+                S[mpz_get_ui(x)] = S[mpz_get_ui(x)] + logp;
 
             if (typeSieving == POSITIVE) {
                 mpz_add(x, x, d2);
@@ -224,7 +229,8 @@ float * sievingNaive(qs_struct * qs_data, enum TypeSieving typeSieving) {
 
         // Ajustar el último elemento si es necesario
         if (mpz_cmp(x, qs_data->intervalo.length) == cmp) {
-            S[mpz_get_ui(x)] = S[mpz_get_ui(x)] + logp;
+            #pragma omp atomic
+                S[mpz_get_ui(x)] = S[mpz_get_ui(x)] + logp;
         }
 
         mpz_clears(x1, x2, x, d1, d2, Mp, p, NULL);
@@ -266,7 +272,26 @@ unsigned long *sieving(qs_struct *qs_data, unsigned long *length) {
 
     float *sp, *sn;
 
-    #pragma omp parallel sections
+    /*sp = sievingNaive(qs_data, POSITIVE);
+    sn = sievingNaive(qs_data, NEGATIVE);
+
+    #pragma omp parallel for schedule(dynamic) num_threads(4)
+    for (unsigned long i = 0; i < intervalLength; i++) {
+        if (sp[i] > mpfr_get_ui(T, MPFR_RNDZ)) {
+            Xi[contXi] = (i + raiznl);
+            contXi++;
+        }
+        if (sn[i] > mpfr_get_ui(T, MPFR_RNDZ)) {
+            Xi[contXi] = (-i + raiznl);
+            contXi++;
+        }
+    }
+
+    free(sp);
+    free(sn);*/
+    
+    omp_set_nested(1);
+    #pragma omp parallel sections num_threads(1)
     {
         #pragma omp section
         {
@@ -278,38 +303,53 @@ unsigned long *sieving(qs_struct *qs_data, unsigned long *length) {
         }
     }
 
-    #pragma omp parallel
-    {
-        #pragma omp sections
-        {
-            #pragma omp section
-            {
-                for (unsigned long i = 0; i < intervalLength; i++) {
-                    if (sp[i] > mpfr_get_ui(T, MPFR_RNDZ)) {
-                        #pragma omp critical
-                        {
-                            Xi[contXi] = (i + raiznl);
-                            contXi++;
-                        }
-                    }
-                }
-                free(sp);
-            }
-            #pragma omp section
-            {
-                for (unsigned long i = 0; i < intervalLength; i++) {
-                    if (sn[i] > mpfr_get_ui(T, MPFR_RNDZ)) {
-                        #pragma omp critical
-                        {
-                            Xi[contXi] = (-i + raiznl);
-                            contXi++;
-                        }
-                    }
-                }
-                free(sn);
-            }
+    #pragma omp parallel for schedule(dynamic) num_threads(4)
+    for (unsigned long i = 0; i < intervalLength; i++) {
+        if (sp[i] > mpfr_get_ui(T, MPFR_RNDZ)) {
+            Xi[contXi] = (i + raiznl);
+            contXi++;
+        }
+        if (sn[i] > mpfr_get_ui(T, MPFR_RNDZ)) {
+            Xi[contXi] = (-i + raiznl);
+            contXi++;
         }
     }
+    
+    free(sp);
+    free(sn);
+
+    // #pragma omp parallel
+    // {
+    //     #pragma omp sections
+    //     {
+    //         #pragma omp section
+    //         {
+    //             for (unsigned long i = 0; i < intervalLength; i++) {
+    //                 if (sp[i] > mpfr_get_ui(T, MPFR_RNDZ)) {
+    //                     #pragma omp critical
+    //                     {
+    //                         Xi[contXi] = (i + raiznl);
+    //                         contXi++;
+    //                     }
+    //                 }
+    //             }
+    //             free(sp);
+    //         }
+    //         #pragma omp section
+    //         {
+    //             for (unsigned long i = 0; i < intervalLength; i++) {
+    //                 if (sn[i] > mpfr_get_ui(T, MPFR_RNDZ)) {
+    //                     #pragma omp critical
+    //                     {
+    //                         Xi[contXi] = (-i + raiznl);
+    //                         contXi++;
+    //                     }
+    //                 }
+    //             }
+    //             free(sn);
+    //         }
+    //     }
+    // }
 
     *length = contXi;
 
