@@ -23,17 +23,21 @@ long generatePrimesBase(mpz_t n, long base_length, prime * primes);
 void freeStruct(qs_struct * qs_data);
 void usage();
 
+//Cantidad de cores que se quieren usar para el cribado, 1 por defecto
+int CORES = 1;
+
 int main(int argc, char **argv)
 {
 	int flagd = 0; 
 	int flagh = 0;
 	char *hdvalue = NULL;
 	char *bvalue = NULL;
+	char *cvalue = NULL;
 	int c;
 	
 	opterr = 0;
 	
-	while ((c = getopt(argc, argv, "d:h:b:")) != -1){
+	while ((c = getopt(argc, argv, "d:h:b:c:")) != -1){
 		switch(c){
 			case 'd':
 				if(flagh == 1){
@@ -55,6 +59,9 @@ int main(int argc, char **argv)
 				break;
 			case 'b':
 				bvalue = optarg;
+				break;
+			case 'c':
+				cvalue = optarg;
 				break;
 			case '?':
 				if (strchr("h", optopt) != NULL)
@@ -82,13 +89,15 @@ int main(int argc, char **argv)
 	//Declaracion de variables
 	qs_struct qs_data;
 	clock_t t_inicio, t_final;
-	
+
 	//Instancia de variables
 	qs_data.n_BSuaves = 0;   
 	mpz_inits(qs_data.n,qs_data.intervalo.length,NULL);
 	if(bvalue!=NULL)qs_data.blocks.length = atol(bvalue);
 	else qs_data.blocks.length = 0;
 	
+	if(cvalue!=NULL)
+		CORES = atoi(cvalue);
 	
 	//si se usa el flag -d se asigna un numero decimal 
 	//si se usa el flag -h se asigna un numero hexadecimal
@@ -513,4 +522,5 @@ void usage(){
 	fprintf(stderr,"-d	# Especifica que el numero N es decimal\n");
 	fprintf(stderr,"-h	# Especifica que el numero N es hexadecimal\n");
 	fprintf(stderr,"-b	# Al usar esta opcion se deben especificar el numero de Bloques\n");
+	fprintf(stderr,"-C	# Especifica el numero de procesadores logicos que se quieren usar\n");
 }

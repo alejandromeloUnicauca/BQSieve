@@ -7,6 +7,10 @@
 #include <string.h>
 #include <omp.h>
 #include <time.h>
+#include <math.h>
+
+//Cantidad de procesadores logicos que se quieren usar definidos en B_QSieve
+extern int CORES;
 
 /** 
 * @brief 
@@ -163,8 +167,17 @@ float * sievingNaive(qs_struct * qs_data, enum TypeSieving typeSieving) {
 
     // Determinar el sentido de comparación (cmp) según el tipo de tamizado
     int cmp = (typeSieving == POSITIVE) ? -1 : 1;
+    int num_threads = 1;
 
-    #pragma omp parallel for schedule(dynamic) num_threads(1)
+    if (typeSieving == POSITIVE) {
+        // Redondeo hacia arriba
+        num_threads = (int) ceil(CORES / 2.0);
+    } else {
+        // Redondeo hacia abajo
+        num_threads = (int) floor(CORES / 2.0);
+    }
+
+    #pragma omp parallel for schedule(dynamic) num_threads(num_threads)
     for (int i = 0; i < qs_data->base.length; i++) {
         mpz_t x1, x2, p;
         mpz_inits(x1, x2, p, NULL);
@@ -290,8 +303,13 @@ unsigned long *sieving(qs_struct *qs_data, unsigned long *length) {
     free(sp);
     free(sn);*/
     
-    omp_set_nested(1);
-    #pragma omp parallel sections num_threads(1)
+    int num_threads = 1;
+    if(CORES > 1){
+        omp_set_nested(1);
+        num_threads = 2;
+    }
+    
+    #pragma omp parallel sections num_threads(num_threads)
     {
         #pragma omp section
         {
@@ -303,7 +321,7 @@ unsigned long *sieving(qs_struct *qs_data, unsigned long *length) {
         }
     }
 
-    #pragma omp parallel for schedule(dynamic) num_threads(4)
+    #pragma omp parallel for schedule(dynamic) num_threads(CORES)
     for (unsigned long i = 0; i < intervalLength; i++) {
         if (sp[i] > mpfr_get_ui(T, MPFR_RNDZ)) {
             Xi[contXi] = (i + raiznl);
