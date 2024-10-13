@@ -1,7 +1,7 @@
 #Makefile
 # Variables comunes
 CC=gcc
-CFLAGS= -fopenmp -std=c11 -ggdb3 -Wall -O3 -mavx
+CFLAGS= -fopenmp -std=c11 -ggdb3 -Wall
 LDFLAGS = -lmpfr -lgmp -lm
 
 # Lista de archivos fuente
