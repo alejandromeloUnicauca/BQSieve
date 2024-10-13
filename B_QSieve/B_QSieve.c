@@ -160,12 +160,12 @@ int main(int argc, char **argv)
 	unsigned long lengthXi = 0;
 	
 	printf("Cribando...\n");
-	t_inicio = omp_get_wtime();
+	double start_time = omp_get_wtime(); // Tiempo de inicio
 	unsigned long *Xi = sieving(&qs_data,&lengthXi); 
-	t_final = omp_get_wtime();
-	double segundosCriba = t_final-t_inicio;
-	printf("tiempo de cribado:%lfs\n",segundosCriba);	
-	
+    double end_time = omp_get_wtime(); // Tiempo de fin
+	double segundosCriba = end_time-start_time;
+	printf("tiempo de cribado: %f segundos\n", segundosCriba); 
+
 	printf("Intervalo despues del cribado:%ld\n",lengthXi);
 	qs_data.intervalo.length_Xi = lengthXi;
 	qs_data.intervalo.length_Qxi = qs_data.intervalo.length_Xi;

@@ -169,13 +169,18 @@ float * sievingNaive(qs_struct * qs_data, enum TypeSieving typeSieving) {
     int cmp = (typeSieving == POSITIVE) ? -1 : 1;
     int num_threads = 1;
 
-    if (typeSieving == POSITIVE) {
-        // Redondeo hacia arriba
-        num_threads = (int) ceil(CORES / 2.0);
-    } else {
-        // Redondeo hacia abajo
-        num_threads = (int) floor(CORES / 2.0);
+    if(CORES > 1){
+        if (typeSieving == POSITIVE) {
+            // Redondeo hacia arriba
+            num_threads = (int) ceil(CORES / 2.0);
+        } else {
+            // Redondeo hacia abajo
+            num_threads = (int) floor(CORES / 2.0);
+        }
     }
+
+    // printf("Num_T %d\n",num_threads);
+    // fflush(stdout);
 
     #pragma omp parallel for schedule(dynamic) num_threads(num_threads)
     for (int i = 0; i < qs_data->base.length; i++) {
@@ -266,7 +271,7 @@ float * sievingNaive(qs_struct * qs_data, enum TypeSieving typeSieving) {
 unsigned long *sieving(qs_struct *qs_data, unsigned long *length) {
 
     unsigned long intervalLength = mpz_get_ui(qs_data->intervalo.length);
-    unsigned long *Xi = (unsigned long *)malloc((intervalLength * 2) * sizeof(unsigned long));
+    unsigned long *Xi = (unsigned long *)malloc((intervalLength/2) * sizeof(unsigned long));
     long contXi = 0;
 
     mpz_t raizn;
@@ -282,7 +287,7 @@ unsigned long *sieving(qs_struct *qs_data, unsigned long *length) {
     mpfr_mul_z(T, T, qs_data->intervalo.length, MPFR_RNDZ);
     mpfr_log(T, T, MPFR_RNDZ);
     mpfr_sub(T, T, qs_data->base.primes[qs_data->base.length - 1].log_value, MPFR_RNDZ);
-
+    unsigned long uT = mpfr_get_ui(T, MPFR_RNDZ);
     float *sp, *sn;
 
     /*sp = sievingNaive(qs_data, POSITIVE);
@@ -306,39 +311,52 @@ unsigned long *sieving(qs_struct *qs_data, unsigned long *length) {
     int num_threads = 1;
     if(CORES > 1){
         omp_set_nested(1);
-        num_threads = 2;
+        num_threads = CORES;
     }
-    
+
     #pragma omp parallel sections num_threads(num_threads)
     {
         #pragma omp section
         {
+            double start_time = omp_get_wtime(); // Tiempo de inicio
             sp = sievingNaive(qs_data, POSITIVE);
+            double end_time = omp_get_wtime(); // Tiempo de fin
+            printf("Tiempo de ejecución de la sección positiva: %f segundos\n", end_time - start_time);
         }
         #pragma omp section
         {
+            double start_time = omp_get_wtime(); // Tiempo de inicio
             sn = sievingNaive(qs_data, NEGATIVE);
+            double end_time = omp_get_wtime(); // Tiempo de fin
+            printf("Tiempo de ejecución de la sección negativa: %f segundos\n", end_time - start_time);
         }
     }
 
-    #pragma omp parallel for schedule(dynamic) num_threads(CORES)
-    for (unsigned long i = 0; i < intervalLength; i++) {
-        if (sp[i] > mpfr_get_ui(T, MPFR_RNDZ)) {
-            Xi[contXi] = (i + raiznl);
-            contXi++;
+    #pragma omp parallel num_threads(CORES)
+    {
+        unsigned long local_contXi = 0;
+        #pragma omp for schedule(dynamic)
+        for (unsigned long i = 0; i < intervalLength; i++) {
+            if (sp[i] > uT) {
+                Xi[local_contXi] = (i + raiznl);
+                local_contXi++;
+            }
+            if (sn[i] > uT) {
+                Xi[local_contXi] = (-i + raiznl);
+                local_contXi++;
+            }
         }
-        if (sn[i] > mpfr_get_ui(T, MPFR_RNDZ)) {
-            Xi[contXi] = (-i + raiznl);
-            contXi++;
-        }
+
+        #pragma omp atomic update
+            contXi += local_contXi;
     }
     
     free(sp);
     free(sn);
 
-    // #pragma omp parallel
+    // #pragma omp parallel num_threads(CORES)
     // {
-    //     #pragma omp sections
+    //     #pragma omp sections 
     //     {
     //         #pragma omp section
     //         {
