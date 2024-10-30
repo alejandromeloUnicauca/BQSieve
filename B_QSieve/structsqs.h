@@ -75,7 +75,7 @@ typedef struct{
 }primes_base;
 
 typedef struct{
-	long * Xi;
+	unsigned long * Xi;
 	/**Tamaño del array Xi*/
 	unsigned long length_Xi;
 	mpz_t * Qxi;

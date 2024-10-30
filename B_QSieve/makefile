@@ -1,10 +1,11 @@
+#Makefile
 # Variables comunes
-CC = gcc
-CFLAGS = -std=c11 -Wall
+CC=gcc
+CFLAGS= -fopenmp -std=c11 -ggdb3 -Wall
 LDFLAGS = -lmpfr -lgmp -lm
 
 # Lista de archivos fuente
-SRCS = B_QSieve.c sieve.c polynomial.c factoring.c
+SRCS = B_QSieve.c sieve.c polynomial.c factoring.c 
 
 # Lista de objetos generados a partir de los archivos fuente
 OBJS = $(SRCS:.c=.o)

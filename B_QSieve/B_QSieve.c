@@ -3,6 +3,7 @@
 #include <getopt.h>
 #include <math.h>
 #include <mpfr.h>
+#include <omp.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,6 +12,7 @@
 #include "polynomial.h"
 #include "factoring.h"
 #include <time.h>
+
 
 void createBlocks(int n, qs_struct * qs_data);
 void crearMatrizNula(qs_struct * qs_data);
@@ -21,17 +23,21 @@ long generatePrimesBase(mpz_t n, long base_length, prime * primes);
 void freeStruct(qs_struct * qs_data);
 void usage();
 
+//Cantidad de cores que se quieren usar para el cribado, 1 por defecto
+int CORES = 1;
+
 int main(int argc, char **argv)
 {
 	int flagd = 0; 
 	int flagh = 0;
 	char *hdvalue = NULL;
 	char *bvalue = NULL;
+	char *cvalue = NULL;
 	int c;
 	
 	opterr = 0;
 	
-	while ((c = getopt(argc, argv, "d:h:b:")) != -1){
+	while ((c = getopt(argc, argv, "d:h:b:c:")) != -1){
 		switch(c){
 			case 'd':
 				if(flagh == 1){
@@ -53,6 +59,9 @@ int main(int argc, char **argv)
 				break;
 			case 'b':
 				bvalue = optarg;
+				break;
+			case 'c':
+				cvalue = optarg;
 				break;
 			case '?':
 				if (strchr("h", optopt) != NULL)
@@ -80,13 +89,15 @@ int main(int argc, char **argv)
 	//Declaracion de variables
 	qs_struct qs_data;
 	clock_t t_inicio, t_final;
-	
+
 	//Instancia de variables
 	qs_data.n_BSuaves = 0;   
 	mpz_inits(qs_data.n,qs_data.intervalo.length,NULL);
 	if(bvalue!=NULL)qs_data.blocks.length = atol(bvalue);
 	else qs_data.blocks.length = 0;
 	
+	if(cvalue!=NULL)
+		CORES = atoi(cvalue);
 	
 	//si se usa el flag -d se asigna un numero decimal 
 	//si se usa el flag -h se asigna un numero hexadecimal
@@ -149,12 +160,12 @@ int main(int argc, char **argv)
 	unsigned long lengthXi = 0;
 	
 	printf("Cribando...\n");
-	t_inicio = clock();
-	long *Xi = sieving(&qs_data,&lengthXi); 
-	t_final = clock();
-	double segundosCriba = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;
-	printf("tiempo de cribado:%fs\n",segundosCriba);	
-	
+	double start_time = omp_get_wtime(); // Tiempo de inicio
+	unsigned long *Xi = sieving(&qs_data,&lengthXi); 
+    double end_time = omp_get_wtime(); // Tiempo de fin
+	double segundosCriba = end_time-start_time;
+	printf("tiempo de cribado: %f segundos\n", segundosCriba); 
+
 	printf("Intervalo despues del cribado:%ld\n",lengthXi);
 	qs_data.intervalo.length_Xi = lengthXi;
 	qs_data.intervalo.length_Qxi = qs_data.intervalo.length_Xi;
@@ -162,13 +173,12 @@ int main(int argc, char **argv)
 	
 	printf("Calculando Polinomio...\n");
 	t_inicio = clock();
-	unsigned long endPos = 0;
-	long numLote = 1;
-	//fermat(&qs_data);
 	crearMatrizNula(&qs_data);
 
 	int res = 1;
 	unsigned long posXi = 0;
+	unsigned long endPos = 0;
+	long numLote = 1;
 	unsigned long sizeLote = 1500;
 	//Se asigna NULL al intervalo de polinomio inicial 
 	qs_data.intervalo.Qxi = NULL;
@@ -188,7 +198,6 @@ int main(int argc, char **argv)
 	double segundosPolinomio = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;
 	printf("tiempo de calculo del polinomio:%fs\n",segundosPolinomio);	
 	
-		
 	printf("Escribiendo matriz...");
 	imprimirMatriz(qs_data.mat);
 	
@@ -513,4 +522,5 @@ void usage(){
 	fprintf(stderr,"-d	# Especifica que el numero N es decimal\n");
 	fprintf(stderr,"-h	# Especifica que el numero N es hexadecimal\n");
 	fprintf(stderr,"-b	# Al usar esta opcion se deben especificar el numero de Bloques\n");
+	fprintf(stderr,"-C	# Especifica el numero de procesadores logicos que se quieren usar\n");
 }

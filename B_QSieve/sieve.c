@@ -5,6 +5,12 @@
 #include <mpfr.h>
 #include "structsqs.h"
 #include <string.h>
+#include <omp.h>
+#include <time.h>
+#include <math.h>
+
+//Cantidad de procesadores logicos que se quieren usar definidos en B_QSieve
+extern int CORES;
 
 /** 
 * @brief 
@@ -147,10 +153,7 @@ int shanksTonelli(mpz_t n, mpz_t p, mpz_t r1, mpz_t r2) {
  *         El usuario es responsable de liberar la memoria asignada para este array.
  */
 float * sievingNaive(qs_struct * qs_data, enum TypeSieving typeSieving) {
-    //TODO:Cribado por bloques? se usa mucha memoria al inicializar el array completo para todo el intervalo
-    // Obtener la longitud del intervalo
     long intervalo = mpz_get_ui(qs_data->intervalo.length);
-
     // Inicializar un array para almacenar resultados
     float *S = (float*) malloc(intervalo * sizeof(float));
     memset(S, 0, sizeof(float) * intervalo);
@@ -162,14 +165,30 @@ float * sievingNaive(qs_struct * qs_data, enum TypeSieving typeSieving) {
     mpz_set(n, qs_data->n);
     mpz_sqrt(raizn, n);
 
-    // Determinar el sentido de comparación (cmp) según el tipo de tamizado
-    int cmp = (typeSieving == POSITIVE) ? -1 : 1;
+    int num_threads = 1;
 
+    if(CORES > 1){
+        if (typeSieving == POSITIVE) {
+            // Redondeo hacia arriba
+            num_threads = (int) ceil(CORES / 2.0);
+        } else {
+            // Redondeo hacia abajo
+            num_threads = (int) floor(CORES / 2.0);
+        }
+    }
+
+    // printf("Num_T %d\n",num_threads);
+    // fflush(stdout);
+
+    #pragma omp parallel for schedule(dynamic) num_threads(num_threads)
     for (int i = 0; i < qs_data->base.length; i++) {
         mpz_t x1, x2, p;
         mpz_inits(x1, x2, p, NULL);
 
         mpz_set(p, qs_data->base.primes[i].value);
+
+        //printf("Iteracion: %d con primo:%ld desde hilo:%d, positivo:%d\n",i, mpz_get_ui(p), omp_get_thread_num(),typeSieving);
+
         float logp = mpfr_get_flt(qs_data->base.primes[i].log_value, MPFR_RNDZ);
 
         // Calcular raíces usando el método de Shanks-Tonelli
@@ -199,39 +218,32 @@ float * sievingNaive(qs_struct * qs_data, enum TypeSieving typeSieving) {
 
         // Ajustar x1 para el tamizado NEGATIVE
         if (typeSieving == NEGATIVE) {
-            mpz_mul_si(Mp, Mp, -1);
             mpz_sub(x1, x1, d2);
+            mpz_mul_si(x1,x1,-1);
         }
 
         // Realizar el tamizado
-        for (mpz_set(x, x1); mpz_cmp(x, Mp) == cmp;) {
-            S[mpz_get_ui(x)] = S[mpz_get_ui(x)] + logp;
-            
-            if (typeSieving == POSITIVE) {
+        for (mpz_set(x, x1); mpz_cmp(x, Mp) == -1;) {
+            #pragma omp atomic
+                S[mpz_get_ui(x)] = S[mpz_get_ui(x)] + logp;
                 mpz_add(x, x, d1);
-            } else {
-                mpz_sub(x, x, d1);
-            }
 
-            S[mpz_get_ui(x)] = S[mpz_get_ui(x)] + logp;
-
-            if (typeSieving == POSITIVE) {
+            #pragma omp atomic
+                S[mpz_get_ui(x)] = S[mpz_get_ui(x)] + logp;
                 mpz_add(x, x, d2);
-            } else {
-                mpz_sub(x, x, d2);
-            }
         }
 
         // Ajustar el último elemento si es necesario
-        if (mpz_cmp(x, qs_data->intervalo.length) == cmp) {
-            S[mpz_get_ui(x)] = S[mpz_get_ui(x)] + logp;
+        if (mpz_cmp(x, qs_data->intervalo.length) == -1) {
+            #pragma omp atomic
+                S[mpz_get_ui(x)] = S[mpz_get_ui(x)] + logp;
         }
 
         mpz_clears(x1, x2, x, d1, d2, Mp, p, NULL);
     }
 
     mpz_clears(n, raizn, NULL);
-
+    
     return S;
 }
 
@@ -247,7 +259,7 @@ float * sievingNaive(qs_struct * qs_data, enum TypeSieving typeSieving) {
 unsigned long *sieving(qs_struct *qs_data, unsigned long *length) {
 
     unsigned long intervalLength = mpz_get_ui(qs_data->intervalo.length);
-    unsigned long *Xi = (unsigned long *)malloc((intervalLength * 2) * sizeof(unsigned long));
+    unsigned long *Xi = (unsigned long *)malloc((intervalLength/2) * sizeof(unsigned long));
     long contXi = 0;
 
     mpz_t raizn;
@@ -256,43 +268,75 @@ unsigned long *sieving(qs_struct *qs_data, unsigned long *length) {
     unsigned long raiznl = mpz_get_ui(raizn);
 
     // Calcular T = log(sqrt(2N)M)-Delta (Delta = log(ultimo primo base))
-    //Se escoge Delta segun Factoring large integers using parallel Quadratic Sieve (Olof Åsbrink and Joel Brynielsson)
     mpfr_t T;
     mpfr_init_set_ui(T, 2, MPFR_RNDZ);
     mpfr_mul_z(T, T, qs_data->n, MPFR_RNDZ);
     mpfr_sqrt(T, T, MPFR_RNDZ);
     mpfr_mul_z(T, T, qs_data->intervalo.length, MPFR_RNDZ);
     mpfr_log(T, T, MPFR_RNDZ);
-    mpfr_sub(T,T,qs_data->base.primes[qs_data->base.length-1].log_value,MPFR_RNDZ);
-    //mpfr_printf ("T:%.2Rf\n", T);
-
+    mpfr_sub(T, T, qs_data->base.primes[qs_data->base.length - 1].log_value, MPFR_RNDZ);
+    unsigned long uT = mpfr_get_ui(T, MPFR_RNDZ);
     float *sp, *sn;
+    
+    int num_threads = 1;
+    if(CORES > 1){
+        omp_set_nested(1);
+        num_threads = CORES;
+    }
 
-    sp = sievingNaive(qs_data, POSITIVE);
-
-    //TODO:calcular delta para usar T = log(sqrt(2N)M)-Delta en if 
-    for (unsigned long i = 0; i < intervalLength; i++) {
-        if (sp[i] > mpfr_get_ui(T,MPFR_RNDZ)) {
-            Xi[contXi] = (i + raiznl);
-            contXi++;
+    #pragma omp parallel sections num_threads(num_threads)
+    {
+        #pragma omp section
+        {
+            double start_time = omp_get_wtime(); // Tiempo de inicio
+            sp = sievingNaive(qs_data, POSITIVE);
+            double end_time = omp_get_wtime(); // Tiempo de fin
+            printf("Tiempo de ejecución de la sección positiva: %f segundos\n", end_time - start_time);
         }
+        #pragma omp section
+        {
+            double start_time = omp_get_wtime(); // Tiempo de inicio
+            sn = sievingNaive(qs_data, NEGATIVE);
+            double end_time = omp_get_wtime(); // Tiempo de fin
+            printf("Tiempo de ejecución de la sección negativa: %f segundos\n", end_time - start_time);
+        }
+    }
+
+    double start_time = omp_get_wtime(); // Tiempo de inicio
+    
+    #pragma omp parallel num_threads(CORES)
+    {
+        unsigned long local_contXi = 0;
+        unsigned long *local_Xi = (unsigned long*) malloc(intervalLength * sizeof(unsigned long));
+
+        #pragma omp for schedule(static)
+        for (unsigned long i = 0; i < intervalLength; i++) {
+            if (sp[i] > uT) {
+                local_Xi[local_contXi++] = (i + raiznl);
+            }
+            if (sn[i] > uT) {
+                local_Xi[local_contXi++] = (-i + raiznl);
+            }
+        }
+
+        #pragma omp critical
+        {
+            memcpy(&Xi[contXi], local_Xi, local_contXi * sizeof(unsigned long));
+            contXi += local_contXi;
+        }
+
+        free(local_Xi);
     }
     
+    double end_time = omp_get_wtime(); // Tiempo de fin
+    printf("Tiempo de ejecución de la evaluacion: %f segundos\n", end_time - start_time);
+    
     free(sp);
-
-    sn = sievingNaive(qs_data, NEGATIVE);
-    for (unsigned long i = 0; i < intervalLength; i++) {
-        if (sn[i] > mpfr_get_ui(T,MPFR_RNDZ)) {
-            Xi[contXi] = (-i + raiznl);
-            contXi++;
-        }
-    }
     free(sn);
 
     *length = contXi;
 
     // Liberar memoria utilizada en el tamizado
-
     mpz_clear(raizn);
     mpfr_clear(T);
 
