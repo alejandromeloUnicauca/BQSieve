@@ -2,6 +2,7 @@ import sys
 import subprocess
 import os
 import shutil
+import time
 
 PATH_TMP="/tmp/bqsieve"
 PATH_BWC="/home/debian/Descargas/cado-nfs/build/debian12/linalg/bwc"
@@ -17,21 +18,18 @@ def main():
     else:
         num = int(sys.argv[2])
 
-    
-    # if len(sys.argv) > 3:
-    #     exit_status = subprocess.run(["./B_QSieve", sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]]).returncode
-    # else:
-    #     exit_status = subprocess.run(["./B_QSieve", sys.argv[1], sys.argv[2]]).returncode
-
     args = ["./B_QSieve"] + sys.argv[1:]
 
+    inicioBQS = time.time()
     exit_status = subprocess.run(args).returncode
-
-    print("exit_status",exit_status)
+    finBQS = time.time()
+    tiempoBQS = finBQS - inicioBQS
+    print(f'\nCribado y construccion de matriz:{tiempoBQS}s, exit_status: {exit_status}')
     if exit_status != 0:
         remove_temp_files()
         sys.exit(1)
 
+    inicioCado = time.time()
     subprocess.run([PATH_BWC+"/mf_scan",
                     "--ascii-in", "mfile=matrix.txt", "--binary-out", "ofile=matrix.bin", "--freq"])
 
@@ -49,10 +47,21 @@ def main():
 
     subprocess.run(["cp", PATH_TMP+"/K.sols0-64.0.txt", "/home/debian/prsa/B_QSieve/"])
     hex_to_binary("K.sols0-64.0.txt", "vec.txt")
+    finCado = time.time()
+    tiempoSolM = finCado-inicioCado
+    print(f'\nSolucion Matriz:{tiempoSolM}s')
+
+    inicioMcd = time.time()
     process_polynomial(num)
 
     with open("salidap.txt") as f:
         print(f.read())
+    finMcd = time.time()
+
+    tiempomcd = finMcd - inicioMcd
+    print(f'\nBusqueda de solucion:{tiempomcd}s')
+    tiempof = tiempoBQS+tiempoSolM+tiempomcd
+    print(f'Tiempo final:{tiempof}s')
 
     remove_temp_files()
 

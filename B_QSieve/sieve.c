@@ -277,24 +277,6 @@ unsigned long *sieving(qs_struct *qs_data, unsigned long *length) {
     mpfr_sub(T, T, qs_data->base.primes[qs_data->base.length - 1].log_value, MPFR_RNDZ);
     unsigned long uT = mpfr_get_ui(T, MPFR_RNDZ);
     float *sp, *sn;
-
-    /*sp = sievingNaive(qs_data, POSITIVE);
-    sn = sievingNaive(qs_data, NEGATIVE);
-
-    #pragma omp parallel for schedule(dynamic) num_threads(4)
-    for (unsigned long i = 0; i < intervalLength; i++) {
-        if (sp[i] > mpfr_get_ui(T, MPFR_RNDZ)) {
-            Xi[contXi] = (i + raiznl);
-            contXi++;
-        }
-        if (sn[i] > mpfr_get_ui(T, MPFR_RNDZ)) {
-            Xi[contXi] = (-i + raiznl);
-            contXi++;
-        }
-    }
-
-    free(sp);
-    free(sn);*/
     
     int num_threads = 1;
     if(CORES > 1){
@@ -320,60 +302,37 @@ unsigned long *sieving(qs_struct *qs_data, unsigned long *length) {
         }
     }
 
+    double start_time = omp_get_wtime(); // Tiempo de inicio
+    
     #pragma omp parallel num_threads(CORES)
     {
         unsigned long local_contXi = 0;
-        #pragma omp for schedule(dynamic)
+        unsigned long *local_Xi = (unsigned long*) malloc(intervalLength * sizeof(unsigned long));
+
+        #pragma omp for schedule(static)
         for (unsigned long i = 0; i < intervalLength; i++) {
             if (sp[i] > uT) {
-                Xi[local_contXi] = (i + raiznl);
-                local_contXi++;
+                local_Xi[local_contXi++] = (i + raiznl);
             }
             if (sn[i] > uT) {
-                Xi[local_contXi] = (-i + raiznl);
-                local_contXi++;
+                local_Xi[local_contXi++] = (-i + raiznl);
             }
         }
 
-        #pragma omp atomic update
+        #pragma omp critical
+        {
+            memcpy(&Xi[contXi], local_Xi, local_contXi * sizeof(unsigned long));
             contXi += local_contXi;
+        }
+
+        free(local_Xi);
     }
+    
+    double end_time = omp_get_wtime(); // Tiempo de fin
+    printf("Tiempo de ejecución de la evaluacion: %f segundos\n", end_time - start_time);
     
     free(sp);
     free(sn);
-
-    // #pragma omp parallel num_threads(CORES)
-    // {
-    //     #pragma omp sections 
-    //     {
-    //         #pragma omp section
-    //         {
-    //             for (unsigned long i = 0; i < intervalLength; i++) {
-    //                 if (sp[i] > mpfr_get_ui(T, MPFR_RNDZ)) {
-    //                     #pragma omp critical
-    //                     {
-    //                         Xi[contXi] = (i + raiznl);
-    //                         contXi++;
-    //                     }
-    //                 }
-    //             }
-    //             free(sp);
-    //         }
-    //         #pragma omp section
-    //         {
-    //             for (unsigned long i = 0; i < intervalLength; i++) {
-    //                 if (sn[i] > mpfr_get_ui(T, MPFR_RNDZ)) {
-    //                     #pragma omp critical
-    //                     {
-    //                         Xi[contXi] = (-i + raiznl);
-    //                         contXi++;
-    //                     }
-    //                 }
-    //             }
-    //             free(sn);
-    //         }
-    //     }
-    // }
 
     *length = contXi;
 
