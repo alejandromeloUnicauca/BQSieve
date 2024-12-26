@@ -3,6 +3,7 @@ import subprocess
 import os
 import shutil
 import time
+import struct
 
 PATH_TMP="/tmp/bqsieve"
 PATH_BWC="/home/debian/Descargas/cado-nfs/build/debian12/linalg/bwc"
@@ -10,9 +11,8 @@ MATRIX_BIN="matrix.bin"
 MATRIX_RW_BIN="matrix.rw.bin"
 MATRIX_CW_BIN="matrix.cw.bin"
 
-
 def main():
-    
+    remove_temp_files()
     if len(sys.argv) > 2 and sys.argv[1] == "-h":
         num = int(sys.argv[2], 16)
     else:
@@ -28,10 +28,11 @@ def main():
     if exit_status != 0:
         remove_temp_files()
         sys.exit(1)
+    
+    ascii_to_binary_matrix("matrix.txt",MATRIX_BIN)
 
     inicioCado = time.time()
-    subprocess.run([PATH_BWC+"/mf_scan",
-                    "--ascii-in", "mfile=matrix.txt", "--binary-out", "ofile=matrix.bin", "--freq"])
+    subprocess.run([PATH_BWC+"/mf_scan2",MATRIX_BIN])
 
     if os.path.exists(PATH_TMP):
         shutil.rmtree(PATH_TMP)
@@ -115,6 +116,39 @@ def remove_temp_files():
     [os.remove(file) for file in files_to_remove if os.path.exists(file)]
     if(os.path.exists(PATH_TMP)):
         shutil.rmtree(PATH_TMP)
+
+def ascii_to_binary_matrix(input_file, output_file):
+    """
+    Convierte una matriz en formato ASCII a un archivo binario.
+
+    Args:
+        input_file: Nombre del archivo ASCII de entrada.
+        output_file: Nombre del archivo binario de salida.
+    """
+    # Abre el archivo ASCII para lectura
+    with open(input_file, "r") as input_stream:
+        it = iter(input_stream)
+        
+        # Si tienes un encabezado en la primera línea, lee y descártalo.
+        # Elimina esta línea si no hay encabezado.
+        header_line = next(it)
+        
+        # Abre el archivo binario para escritura
+        with open(output_file, "wb") as data:
+            for line in it:
+                # Divide la línea y convierte los valores en enteros
+                w, *cols = [int(x) for x in line.strip().split()]
+                
+                # Asegúrate de que w coincide con el número de columnas especificado
+                assert w == len(cols), f"Error: {w} no coincide con {len(cols)} en la línea: {line}"
+                
+                # Escribe el número de columnas (w) en formato binario
+                data.write(struct.pack("<I", w))
+                
+                # Escribe cada índice de columna (cols) en formato binario
+                for j in cols:
+                    data.write(struct.pack("<I", j))
+
 
 if __name__ == "__main__":
     main()
