@@ -2,6 +2,14 @@
 
 B_QSieve es la implementación del algoritmo Quadratic sieve mejorado al hacer divisiones por bloques en lugar de divisiones triviales, lo que permite una aceleración sobre el paso del cribado.
 
+## Prerrequisitos
+
+Antes de comenzar la instalación es necesario instalar algunas herramientas y librerias:
+
+```console
+apt install gcc make cmake python3 m4 bc
+```
+
 ## Installation
 
 1. Descargar e instale la librería [GMP 6.2.1](https://gmplib.org/list-archives/gmp-announce/2020-November/000049.html).
