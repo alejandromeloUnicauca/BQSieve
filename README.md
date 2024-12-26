@@ -7,7 +7,7 @@ B_QSieve es la implementación del algoritmo Quadratic sieve mejorado al hacer d
 Antes de comenzar la instalación es necesario instalar algunas herramientas y librerias:
 
 ```console
-apt install gcc make python3 m4 
+apt install gcc make cmake python3 m4 bc
 ```
 
 ## Installation
