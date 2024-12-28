@@ -185,18 +185,18 @@ int main(int argc, char **argv)
 	while(endPos<lengthXi && res==1){
 		endPos=fermat(&qs_data,numLote++,sizeLote);
 		if(qs_data.blocks.length > 0){
-			res = factoringBlocks(&qs_data,sizeLote,posXi*sizeLote);
+			res = factoringBlocks(&qs_data,qs_data.intervalo.length_Qxi,posXi*sizeLote);
 		}
 		else{
-			res = factoringTrial(&qs_data,sizeLote,posXi*sizeLote);  
+			res = factoringTrial(&qs_data,qs_data.intervalo.length_Qxi,posXi*sizeLote);  
 		}
 		posXi++;
 	}
-	 
-	
+	printf("Numeros B_Suaves encontrados:%ld\n",qs_data.n_BSuaves);
 	t_final = clock();
 	double segundosPolinomio = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;
 	printf("tiempo de calculo del polinomio:%fs\n",segundosPolinomio);	
+	
 	
 	printf("Escribiendo matriz...");
 	imprimirMatriz(qs_data.mat);
