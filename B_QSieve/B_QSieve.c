@@ -168,7 +168,7 @@ int main(int argc, char **argv)
 
 	printf("Intervalo despues del cribado:%ld\n",lengthXi);
 	qs_data.intervalo.length_Xi = lengthXi;
-	qs_data.intervalo.length_Qxi = qs_data.intervalo.length_Xi;
+	//qs_data.intervalo.length_Qxi = lengthXi;
 	qs_data.intervalo.Xi = Xi;
 	
 	printf("Calculando Polinomio...\n");
@@ -335,7 +335,6 @@ void freeStruct(qs_struct * qs_data){
 	free(qs_data->base.primes); 	
 	
 	//liberar memoria de los bloques
-	//TODO:validar si se crearon bloques
 	if(qs_data->blocks.length > 0){
 		for (int i = 0; i < qs_data->blocks.length ; i++)
 		{
@@ -352,16 +351,15 @@ void freeStruct(qs_struct * qs_data){
 		}
 		free(qs_data->blocks.block);
 	}
-	
-	//liberar memoria del intervalo
-	/*mpz_clears(qs_data->n,qs_data->intervalo.length,NULL);
-	
-	for (long i = 0; i < qs_data->intervalo.length_Qxi; i++)
-	{
-		mpz_clear(qs_data->intervalo.Qxi[i]);
-	}*/
-	 
-	free(qs_data->intervalo.Qxi);
+
+	if(qs_data->intervalo.Qxi!=NULL){
+		for (long i = 0; i < 100; i++)
+		{
+			mpz_clear(qs_data->intervalo.Qxi[i]);
+		}
+		free(qs_data->intervalo.Qxi);
+	}
+
 	free(qs_data->intervalo.Xi);
 	
 	//liberar memoria de la matriz
@@ -511,7 +509,7 @@ void getIntervalLength(mpz_t n, mpz_t result){
 	mpfr_pow (num, num, pow, MPFR_RNDZ);// num = num^pow
 	mpfr_pow_si(num, num, 3, MPFR_RNDZ);//num = num^3
 	mpfr_get_z(result, num, MPFR_RNDZ);//se le asigna a result la parte entera de num
-	
+	//mpz_div_ui(result,result,3);
 	//Liberar memoria
 	mpfr_clears(ln1,ln2,e,pow,num,NULL);
 }

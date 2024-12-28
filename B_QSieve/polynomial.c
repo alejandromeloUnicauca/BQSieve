@@ -23,13 +23,7 @@ unsigned long fermat(qs_struct *qs_data, unsigned long numLote, unsigned long nu
 	unsigned long posXi = (numLote-1)*numPosiciones;
     unsigned long endPosition = numLote * numPosiciones;
     
-    if (endPosition > qs_data->intervalo.length_Xi) {
-        endPosition = qs_data->intervalo.length_Xi;  // Ajustar si excede el tamaño de los datos
-    }else{
-		endPosition = numPosiciones;
-	}
-	
-	// Liberar memoria previamente asignada si es necesario
+    // Liberar memoria previamente asignada si es necesario
     if (qs_data->intervalo.Qxi != NULL) {
         for (unsigned long i = 0; i < numPosiciones; i++) {
             mpz_clear(qs_data->intervalo.Qxi[i]);
@@ -38,9 +32,14 @@ unsigned long fermat(qs_struct *qs_data, unsigned long numLote, unsigned long nu
         free(qs_data->intervalo.Qxi);
         qs_data->intervalo.Qxi = NULL;
     }
+
+    if (endPosition > qs_data->intervalo.length_Xi) {
+        numPosiciones = endPosition-qs_data->intervalo.length_Xi;  // Ajustar si excede el tamaño de los datos
+    }
 	
 	//Se asigna memoria para el array Qxi
 	qs_data->intervalo.Qxi = (mpz_t *)malloc(numPosiciones * sizeof(mpz_t));
+    qs_data->intervalo.length_Qxi = numPosiciones;
 	if (qs_data->intervalo.Qxi == NULL) {
         fprintf(stderr, "Error al asignar memoria para Qxi\n");
         exit(EXIT_FAILURE);
@@ -48,7 +47,7 @@ unsigned long fermat(qs_struct *qs_data, unsigned long numLote, unsigned long nu
     
     unsigned long i;
 
-    for (i = 0; i < endPosition; i++) {
+    for (i = 0; i < numPosiciones; i++) {
         mpz_t tempSub;
         mpz_init(tempSub);
 		mpz_init(qs_data->intervalo.Qxi[i]);
