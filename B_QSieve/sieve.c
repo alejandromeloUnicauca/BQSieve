@@ -165,22 +165,22 @@ float * sievingNaive(qs_struct * qs_data, enum TypeSieving typeSieving) {
     mpz_set(n, qs_data->n);
     mpz_sqrt(raizn, n);
 
-    int num_threads = 1;
+    // int num_threads = 1;
 
-    if(CORES > 1){
-        if (typeSieving == POSITIVE) {
-            // Redondeo hacia arriba
-            num_threads = (int) ceil(CORES / 2.0);
-        } else {
-            // Redondeo hacia abajo
-            num_threads = (int) floor(CORES / 2.0);
-        }
-    }
+    // if(CORES > 1){
+    //     if (typeSieving == POSITIVE) {
+    //         // Redondeo hacia arriba
+    //         num_threads = (int) ceil(CORES / 2.0);
+    //     } else {
+    //         // Redondeo hacia abajo
+    //         num_threads = (int) floor(CORES / 2.0);
+    //     }
+    // }
 
     // printf("Num_T %d\n",num_threads);
     // fflush(stdout);
 
-    #pragma omp parallel for schedule(dynamic) num_threads(num_threads)
+    #pragma omp parallel for schedule(dynamic) num_threads(CORES)
     for (int i = 0; i < qs_data->base.length; i++) {
         mpz_t x1, x2, p;
         mpz_inits(x1, x2, p, NULL);
@@ -259,7 +259,7 @@ float * sievingNaive(qs_struct * qs_data, enum TypeSieving typeSieving) {
 unsigned long *sieving(qs_struct *qs_data, unsigned long *length) {
 
     unsigned long intervalLength = mpz_get_ui(qs_data->intervalo.length);
-    unsigned long *Xi = (unsigned long *)malloc((intervalLength/2) * sizeof(unsigned long));
+    unsigned long *Xi = (unsigned long *)malloc((intervalLength*0.5) * sizeof(unsigned long));
     long contXi = 0;
 
     mpz_t raizn;
@@ -277,62 +277,100 @@ unsigned long *sieving(qs_struct *qs_data, unsigned long *length) {
     mpfr_sub(T, T, qs_data->base.primes[qs_data->base.length - 1].log_value, MPFR_RNDZ);
     unsigned long uT = mpfr_get_ui(T, MPFR_RNDZ);
     float *sp, *sn;
-    
-    int num_threads = 1;
-    if(CORES > 1){
-        omp_set_nested(1);
-        num_threads = CORES;
-    }
 
-    #pragma omp parallel sections num_threads(num_threads)
-    {
-        #pragma omp section
-        {
-            double start_time = omp_get_wtime(); // Tiempo de inicio
-            sp = sievingNaive(qs_data, POSITIVE);
-            double end_time = omp_get_wtime(); // Tiempo de fin
-            printf("Tiempo de ejecución de la sección positiva: %f segundos\n", end_time - start_time);
-        }
-        #pragma omp section
-        {
-            double start_time = omp_get_wtime(); // Tiempo de inicio
-            sn = sievingNaive(qs_data, NEGATIVE);
-            double end_time = omp_get_wtime(); // Tiempo de fin
-            printf("Tiempo de ejecución de la sección negativa: %f segundos\n", end_time - start_time);
-        }
-    }
+    printf("T:%ld\n",uT);
+    
+    // int num_threads = 1;
+    // if(CORES > 1){
+    //     omp_set_nested(1);
+    //     num_threads = CORES;
+    // }
+
 
     double start_time = omp_get_wtime(); // Tiempo de inicio
-    
-    #pragma omp parallel num_threads(CORES)
-    {
-        unsigned long local_contXi = 0;
-        unsigned long *local_Xi = (unsigned long*) malloc(intervalLength * sizeof(unsigned long));
-
-        #pragma omp for schedule(static)
-        for (unsigned long i = 0; i < intervalLength; i++) {
-            if (sp[i] > uT) {
-                local_Xi[local_contXi++] = (i + raiznl);
-            }
-            if (sn[i] > uT) {
-                local_Xi[local_contXi++] = (-i + raiznl);
-            }
-        }
-
-        #pragma omp critical
-        {
-            memcpy(&Xi[contXi], local_Xi, local_contXi * sizeof(unsigned long));
-            contXi += local_contXi;
-        }
-
-        free(local_Xi);
-    }
-    
+    sp = sievingNaive(qs_data, POSITIVE);
     double end_time = omp_get_wtime(); // Tiempo de fin
-    printf("Tiempo de ejecución de la evaluacion: %f segundos\n", end_time - start_time);
-    
+    printf("Tiempo de ejecución de la sección positiva: %f segundos\n", end_time - start_time);
+
+    for (unsigned long i = 0; i < intervalLength; i++) {
+        if (sp[i] > uT) {
+            Xi[contXi++] = (i + raiznl);
+        }
+    }
+
     free(sp);
+
+    start_time = omp_get_wtime(); // Tiempo de inicio
+    sn = sievingNaive(qs_data, POSITIVE);
+    end_time = omp_get_wtime(); // Tiempo de fin
+    printf("Tiempo de ejecución de la sección positiva: %f segundos\n", end_time - start_time);
+
+    for (unsigned long i = 0; i < intervalLength; i++) {
+        if (sn[i] > uT) {
+            Xi[contXi++] = (i + raiznl);
+        }
+    }
+
     free(sn);
+
+    // #pragma omp parallel sections num_threads(num_threads)
+    // {
+    //     #pragma omp section
+    //     {
+    //         double start_time = omp_get_wtime(); // Tiempo de inicio
+    //         sp = sievingNaive(qs_data, POSITIVE);
+    //         double end_time = omp_get_wtime(); // Tiempo de fin
+    //         printf("Tiempo de ejecución de la sección positiva: %f segundos\n", end_time - start_time);
+    //     }
+    //     #pragma omp section
+    //     {
+    //         double start_time = omp_get_wtime(); // Tiempo de inicio
+    //         sn = sievingNaive(qs_data, NEGATIVE);
+    //         double end_time = omp_get_wtime(); // Tiempo de fin
+    //         printf("Tiempo de ejecución de la sección negativa: %f segundos\n", end_time - start_time);
+    //     }
+    // }
+
+    //double start_time = omp_get_wtime(); // Tiempo de inicio
+    
+    // for (unsigned long i = 0; i < intervalLength; i++) {
+    //     if (sp[i] > uT) {
+    //         Xi[contXi++] = (i + raiznl);
+    //     }
+    //     if (sn[i] > uT) {
+    //         Xi[contXi++]  = (-i + raiznl);
+    //     }
+    // }
+
+    // #pragma omp parallel num_threads(CORES)
+    // {
+    //     unsigned long local_contXi = 0;
+    //     unsigned long *local_Xi = (unsigned long*) malloc(intervalLength * sizeof(unsigned long));
+
+    //     #pragma omp for schedule(static)
+    //     for (unsigned long i = 0; i < intervalLength; i++) {
+    //         if (sp[i] > uT) {
+    //             local_Xi[local_contXi++] = (i + raiznl);
+    //         }
+    //         if (sn[i] > uT) {
+    //             local_Xi[local_contXi++] = (-i + raiznl);
+    //         }
+    //     }
+
+    //     #pragma omp critical
+    //     {
+    //         memcpy(&Xi[contXi], local_Xi, local_contXi * sizeof(unsigned long));
+    //         contXi += local_contXi;
+    //     }
+
+    //     free(local_Xi);
+    // }
+    
+    // double end_time = omp_get_wtime(); // Tiempo de fin
+    // printf("Tiempo de ejecución de la evaluacion: %f segundos\n", end_time - start_time);
+    
+    // free(sp);
+    // free(sn);
 
     *length = contXi;
 

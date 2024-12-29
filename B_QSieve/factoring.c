@@ -89,7 +89,7 @@ int blockDivision(mpz_t Qxi, qs_struct * qs_data){
 		
 	mpz_t gcd, gcdAnt;
 	mpz_inits(gcd,gcdAnt,NULL);
-	long contGcd = 0, cont = 0;
+	unsigned long contGcd = 0, cont = 0;
 	for (long i = 0; i < qs_data->blocks.length; i++)
 	{
 		contGcd = 0;
