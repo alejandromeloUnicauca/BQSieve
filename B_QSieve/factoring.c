@@ -185,7 +185,7 @@ void agregarAVectorDiv(qs_struct * qs_data, data_divT * data_d){
 int trialDivision(mpz_t Qxi, qs_struct * qs_data){
 	data_divT * data_d;
 	data_d = (data_divT*)malloc((qs_data->base.length)*sizeof(data_divT));
-	int contDiv = 0;
+	unsigned long contDiv = 0;
 	mpz_t QxiTemp;
 	mpz_init(QxiTemp);
 	mpz_set(QxiTemp,Qxi);

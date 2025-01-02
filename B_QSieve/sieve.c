@@ -292,7 +292,7 @@ unsigned long *sieving(qs_struct *qs_data, unsigned long *length) {
     double end_time = omp_get_wtime(); // Tiempo de fin
     printf("Tiempo de ejecución de la sección positiva: %f segundos\n", end_time - start_time);
 
-    for (unsigned long i = 0; i < intervalLength; i++) {
+    for (unsigned long long i = 0; i < intervalLength; i++) {
         if (sp[i] > uT) {
             Xi[contXi++] = (i + raiznl);
         }
@@ -305,7 +305,7 @@ unsigned long *sieving(qs_struct *qs_data, unsigned long *length) {
     end_time = omp_get_wtime(); // Tiempo de fin
     printf("Tiempo de ejecución de la sección positiva: %f segundos\n", end_time - start_time);
 
-    for (unsigned long i = 0; i < intervalLength; i++) {
+    for (unsigned long long i = 0; i < intervalLength; i++) {
         if (sn[i] > uT) {
             Xi[contXi++] = (i + raiznl);
         }

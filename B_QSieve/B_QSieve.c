@@ -466,9 +466,10 @@ void getPrimesBaseLength(mpz_t n, long * result){
 	mpfr_t num, ln1, ln2, e, pow;
 	
 	//inicializacion de variables
-	mpfr_inits(num,ln1,ln2,e,pow,NULL);
+	mpfr_inits(ln1,ln2,e,pow,NULL);
+	mpfr_init2(num,mpz_sizeinbase(n,2));
+	mpfr_set_z(num,n,MPFR_RNDN);
 
-	mpfr_set_z(num,n,MPFR_RNDZ);
 	mpfr_set_str(e, "2.71828182845904523536", 10, MPFR_RNDZ);//define euler
 	mpfr_set_str(pow, "0.3535533905932738", 10, MPFR_RNDZ);//define sqrt(2)/4
 	mpfr_log(ln1, num, MPFR_RNDZ);//ln1= log(num)
@@ -498,7 +499,9 @@ void getIntervalLength(mpz_t n, mpz_t result){
 	//inicializacion de variables
 	mpfr_inits(num,ln1,ln2,e,pow,NULL);
 	
-	mpfr_set_z(num,n,MPFR_RNDZ);
+	mpfr_init2(num,mpz_sizeinbase(n,2));
+	mpfr_set_z(num,n,MPFR_RNDN);
+
 	mpfr_set_str(e, "2.71828182845904523536", 10, MPFR_RNDZ);//define euler
 	mpfr_set_str(pow, "0.3535533905932738", 10, MPFR_RNDZ);//define sqrt(2)/4
 	mpfr_log(ln1, num, MPFR_RNDZ);//ln1 = log(num)
