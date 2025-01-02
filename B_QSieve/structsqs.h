@@ -75,12 +75,12 @@ typedef struct{
 }primes_base;
 
 typedef struct{
-	unsigned long * Xi;
+	mpz_t * Xi;
 	/**Tamaño del array Xi*/
-	unsigned long length_Xi;
+	unsigned long long length_Xi;
 	mpz_t * Qxi;
 	/**Tamaño del array Qxi*/
-	unsigned long length_Qxi;
+	unsigned long long length_Qxi;
 	/**Tamaño del invervalo*/
 	mpz_t length;
 }interval;

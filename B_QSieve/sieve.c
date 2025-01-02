@@ -256,17 +256,15 @@ float * sievingNaive(qs_struct * qs_data, enum TypeSieving typeSieving) {
  * @param length Puntero para almacenar la longitud del array Xi resultante.
  * @return Puntero al array Xi que contiene los números B-suaves encontrados en el intervalo.
  */
-unsigned long *sieving(qs_struct *qs_data, unsigned long *length) {
+mpz_t *sieving(qs_struct *qs_data, unsigned long *length) {
 
-    unsigned long intervalLength = mpz_get_ui(qs_data->intervalo.length);
-    unsigned long *Xi = (unsigned long *)malloc((intervalLength*0.5) * sizeof(unsigned long));
+    unsigned long long intervalLength = mpz_get_ui(qs_data->intervalo.length);
+    mpz_t *Xi = (mpz_t *)malloc((intervalLength*0.2) * sizeof(mpz_t));
     long contXi = 0;
 
     mpz_t raizn;
     mpz_init(raizn);
     mpz_sqrt(raizn, qs_data->n);
-    unsigned long raiznl = mpz_get_ui(raizn);
-
     // Calcular T = log(sqrt(2N)M)-Delta (Delta = log(ultimo primo base))
     mpfr_t T;
     mpfr_init_set_ui(T, 2, MPFR_RNDZ);
@@ -294,7 +292,10 @@ unsigned long *sieving(qs_struct *qs_data, unsigned long *length) {
 
     for (unsigned long long i = 0; i < intervalLength; i++) {
         if (sp[i] > uT) {
-            Xi[contXi++] = (i + raiznl);
+            mpz_init(Xi[contXi]);
+            mpz_add_ui(Xi[contXi],raizn,i);
+            //gmp_printf("ContXi:%ld-%Zd\n",contXi, Xi[contXi]);
+            contXi++;
         }
     }
 
@@ -303,11 +304,13 @@ unsigned long *sieving(qs_struct *qs_data, unsigned long *length) {
     start_time = omp_get_wtime(); // Tiempo de inicio
     sn = sievingNaive(qs_data, POSITIVE);
     end_time = omp_get_wtime(); // Tiempo de fin
-    printf("Tiempo de ejecución de la sección positiva: %f segundos\n", end_time - start_time);
+    printf("Tiempo de ejecución de la sección negativa: %f segundos\n", end_time - start_time);
 
     for (unsigned long long i = 0; i < intervalLength; i++) {
         if (sn[i] > uT) {
-            Xi[contXi++] = (i + raiznl);
+            mpz_init(Xi[contXi]);
+            mpz_sub_ui(Xi[contXi],raizn,i);
+            contXi++;
         }
     }
 

@@ -154,7 +154,8 @@ int factoringBlocks(qs_struct * qs_data,  unsigned long endPos, unsigned long po
 		if(blockDivision(qs_data->intervalo.Qxi[i],qs_data)==1){	
 			qs_data->n_BSuaves++;
 			if(qs_data->n_BSuaves==qs_data->base.length+1)return 0;
-			fprintf(fp,"%ld;",qs_data->intervalo.Xi[posXi]); 
+			mpz_out_str(fp,10,qs_data->intervalo.Xi[posXi]);
+			fprintf(fp,";"); 
 			mpz_out_str(fp,10,qs_data->intervalo.Qxi[i]);
 			fprintf(fp,"\n");
 		}
@@ -243,7 +244,8 @@ int factoringTrial(qs_struct * qs_data, unsigned long endPos, unsigned long posX
 		if(trialDivision(qs_data->intervalo.Qxi[i],qs_data)==1){
 			qs_data->n_BSuaves++;
 			if(qs_data->n_BSuaves==qs_data->base.length+1)return 0;
-			fprintf(fp,"%ld;",qs_data->intervalo.Xi[posXi]); 
+			mpz_out_str(fp,10,qs_data->intervalo.Xi[posXi]);
+			fprintf(fp,";"); 
 			mpz_out_str(fp,10,qs_data->intervalo.Qxi[i]);
 			fprintf(fp,"\n");
 		}

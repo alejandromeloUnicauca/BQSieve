@@ -52,16 +52,16 @@ unsigned long fermat(qs_struct *qs_data, unsigned long numLote, unsigned long nu
         mpz_init(tempSub);
 		mpz_init(qs_data->intervalo.Qxi[i]);
         //printf("%ld\n,", qs_data->intervalo.Xi[i]);
-        mpz_set_si(qs_data->intervalo.Qxi[i], qs_data->intervalo.Xi[posXi]);
+        mpz_set(qs_data->intervalo.Qxi[i], qs_data->intervalo.Xi[posXi]);
         mpz_pow_ui(qs_data->intervalo.Qxi[i], qs_data->intervalo.Qxi[i], 2);
         mpz_sub(tempSub, qs_data->intervalo.Qxi[i], qs_data->n);
         mpz_swap(qs_data->intervalo.Qxi[i],tempSub);
-        //gmp_printf("%Zd,", qs_data->intervalo.Qxi[i]);
+        //gmp_printf("%Zd\n", qs_data->intervalo.Xi[posXi]);
         posXi++;
         mpz_clear(tempSub);
 	}
 
-	return endPosition;
+	return posXi;
 }
 
 /**
@@ -109,12 +109,10 @@ unsigned long standard(qs_struct *qs_data, unsigned long numLote, unsigned long 
         mpz_t c_sqrtN;
         mpfr_t sqrtN;
         mpz_init(c_sqrtN);
-
-        
 		mpz_init(qs_data->intervalo.Qxi[i]);
         mpfr_init2(sqrtN,mpz_sizeinbase(qs_data->n,2));
         mpfr_set_z(sqrtN,qs_data->n,MPFR_RNDN);
-        mpz_set_si(qs_data->intervalo.Qxi[i], qs_data->intervalo.Xi[posXi]);
+        mpz_set(qs_data->intervalo.Qxi[i], qs_data->intervalo.Xi[posXi]);
         mpfr_sqrt(sqrtN,sqrtN,MPFR_RNDZ);
         mpfr_get_z(c_sqrtN,sqrtN,MPFR_RNDU);
         mpz_add(qs_data->intervalo.Qxi[i], qs_data->intervalo.Qxi[i], c_sqrtN);

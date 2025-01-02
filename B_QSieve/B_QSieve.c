@@ -161,7 +161,7 @@ int main(int argc, char **argv)
 	
 	printf("Cribando...\n");
 	double start_time = omp_get_wtime(); // Tiempo de inicio
-	unsigned long *Xi = sieving(&qs_data,&lengthXi); 
+	mpz_t *Xi = sieving(&qs_data,&lengthXi); 
     double end_time = omp_get_wtime(); // Tiempo de fin
 	double segundosCriba = end_time-start_time;
 	printf("tiempo de cribado: %f segundos\n", segundosCriba); 
@@ -353,14 +353,21 @@ void freeStruct(qs_struct * qs_data){
 	}
 
 	if(qs_data->intervalo.Qxi!=NULL){
-		for (long i = 0; i < 100; i++)
+		for (unsigned long i = 0; i < 100; i++)
 		{
 			mpz_clear(qs_data->intervalo.Qxi[i]);
 		}
 		free(qs_data->intervalo.Qxi);
 	}
 
-	free(qs_data->intervalo.Xi);
+	if(qs_data->intervalo.Xi!=NULL){
+		for (unsigned long i = 0; i < 100; i++)
+		{
+			mpz_clear(qs_data->intervalo.Xi[i]);
+		}
+		free(qs_data->intervalo.Xi);
+	}
+
 	
 	//liberar memoria de la matriz
 	   
