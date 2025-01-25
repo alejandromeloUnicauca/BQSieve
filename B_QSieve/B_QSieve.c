@@ -518,7 +518,8 @@ void getIntervalLength(mpz_t n, mpz_t result){
 	mpfr_pow (num, e, num, MPFR_RNDZ);// num = e^num
 	mpfr_pow (num, num, pow, MPFR_RNDZ);// num = num^pow
 	mpfr_pow_si(num, num, 3, MPFR_RNDZ);//num = num^3
-	//mpfr_mul_d(num,num,1.5,MPFR_RNDZ);
+	// mpfr_mul_d(num,num,5,MPFR_RNDZ);
+	mpfr_div_ui(num,num,2,MPFR_RNDZ);
 	mpfr_get_z(result, num, MPFR_RNDZ);//se le asigna a result la parte entera de num
 	//mpz_div_ui(result,result,3);
 	//Liberar memoria
