@@ -1,0 +1,52 @@
+import os
+import subprocess
+
+def get_modulus(bits):
+    """Obtiene el módulo de la clave RSA desde un archivo PEM."""
+    cmd = ["openssl", "rsa", "-noout", "-modulus", "-in", f"../keys/key{bits}.pem"]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode == 0:
+        modulus = result.stdout.strip().split('=')[-1]
+        return modulus
+    else:
+        return None
+
+def hex_to_dec(hex_value):
+    """Convierte un valor hexadecimal a decimal."""
+    return int(hex_value, 16)
+
+def run_b_sieve(key, bits, processors):
+    """Ejecuta el script B_Sieve.py con la clave y los parámetros adecuados."""
+    cmd = ["python3", "B_Sieve.py", "-d", str(key), "-b", "5", "-c", str(processors)]
+    output_file = f"results/result{bits}_{processors}.log"
+    with open(output_file, "w") as output:
+        subprocess.run(cmd, stdout=output)
+
+def main():
+    os.makedirs("results", exist_ok=True)
+    
+    cont = 1
+    for bits in range(100, 160, 10):
+        with open("results/result.log", "a") as log:
+            log.write(f"Prueba N°{cont} de {bits} bits \n")
+        
+        modulus = get_modulus(bits)
+        if not modulus:
+            print(f"Error obteniendo el módulo para {bits} bits")
+            continue
+        
+        key = hex_to_dec(modulus)
+        with open("results/result.log", "a") as log:
+            log.write(f"N={key}\n")
+            log.write(f"Digitos de N:{len(str(key))}\n")
+        
+        # Prueba con 1, 2, 4, 8 y 16 procesadores
+        for processors in [1, 2, 4, 8, 16]:
+            with open("results/result.log", "a") as log:  # Abrir el archivo dentro del bucle
+                log.write(f"UP={processors}\n")
+            run_b_sieve(key, bits, processors)
+        
+        cont += 1
+
+if __name__ == "__main__":
+    main()
