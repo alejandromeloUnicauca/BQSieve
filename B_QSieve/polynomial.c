@@ -21,7 +21,6 @@
 unsigned long fermat(qs_struct *qs_data, unsigned long numLote, unsigned long numPosiciones){
 	unsigned long posXi = (numLote-1)*numPosiciones;
     unsigned long endPosition = numLote * numPosiciones;
-    
     // Liberar memoria previamente asignada si es necesario
     if (qs_data->intervalo.Qxi != NULL) {
         for (unsigned long i = 0; i < numPosiciones; i++) {
@@ -48,17 +47,12 @@ unsigned long fermat(qs_struct *qs_data, unsigned long numLote, unsigned long nu
     unsigned long i;
 
     for (i = 0; i < numPosiciones; i++) {
-        mpz_t tempSub;
-        mpz_init(tempSub);
 		mpz_init(qs_data->intervalo.Qxi[i]);
-        //printf("%ld\n,", qs_data->intervalo.Xi[i]);
         mpz_set(qs_data->intervalo.Qxi[i], qs_data->intervalo.Xi[posXi]);
         mpz_pow_ui(qs_data->intervalo.Qxi[i], qs_data->intervalo.Qxi[i], 2);
-        mpz_sub(tempSub, qs_data->intervalo.Qxi[i], qs_data->n);
-        mpz_swap(qs_data->intervalo.Qxi[i],tempSub);
-        //gmp_printf("%Zd\n", qs_data->intervalo.Xi[posXi]);
+        mpz_sub(qs_data->intervalo.Qxi[i],qs_data->intervalo.Qxi[i],  qs_data->n);
+        // gmp_printf("%Zd\n", qs_data->intervalo.Xi[posXi]);
         posXi++;
-        mpz_clear(tempSub);
 	}
 
 	return posXi;

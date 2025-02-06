@@ -315,7 +315,7 @@ mpz_t *sieving(qs_struct *qs_data, unsigned long *length) {
 
     #pragma omp parallel num_threads(CORES)
     {
-        unsigned long local_contXi = contXi;
+        unsigned long local_contXi = 0;
         mpz_t *local_Xi = (mpz_t *)malloc((intervalLength*0.2) * sizeof(mpz_t));
 
         #pragma omp for schedule(static)

@@ -501,11 +501,12 @@ void getIntervalLength(mpz_t n, mpz_t result){
 	//formuala: result = ((e^sqrt(ln(n)*ln(ln(n))))^(sqrt(2)/4))^3
 	
 	//Declaracion de variables
-	mpfr_t num, ln1, ln2,e,pow;
-	
+	mpfr_t num, ln1, ln2, e, pow, fx, b;
+	double k = -0.0004;
+	double fxd = 1;
 	//inicializacion de variables
-	mpfr_inits(num,ln1,ln2,e,pow,NULL);
-	
+	mpfr_inits(num,ln1,ln2,e,pow,fx,b,NULL);
+
 	mpfr_init2(num,mpz_sizeinbase(n,2));
 	mpfr_set_z(num,n,MPFR_RNDN);
 
@@ -515,15 +516,24 @@ void getIntervalLength(mpz_t n, mpz_t result){
 	mpfr_log(ln2, ln1,MPFR_RNDZ);//ln2 = log(log(num))
 	mpfr_mul(num, ln1, ln2, MPFR_RNDZ);//num = ln1*ln1
 	mpfr_sqrt(num, num, MPFR_RNDZ);// num = sqrt(num)
-	mpfr_pow (num, e, num, MPFR_RNDZ);// num = e^num
-	mpfr_pow (num, num, pow, MPFR_RNDZ);// num = num^pow
+	mpfr_pow(num, e, num, MPFR_RNDZ);// num = e^num
+	mpfr_pow(num, num, pow, MPFR_RNDZ);// num = num^pow
+	mpfr_set(b,num,MPFR_RNDZ);// valor de la base de primos B
+
 	mpfr_pow_si(num, num, 3, MPFR_RNDZ);//num = num^3
-	// mpfr_mul_d(num,num,5,MPFR_RNDZ);
-	mpfr_div_ui(num,num,2,MPFR_RNDZ);
+
+	mpfr_set_ui(fx,5,MPFR_RNDZ);
+	mpfr_mul_d(b,b,k,MPFR_RNDZ);
+	mpfr_pow(b,e,b,MPFR_RNDZ);
+	mpfr_mul_ui(b,b,4,MPFR_RNDZ);
+	mpfr_sub(fx,fx,b,MPFR_RNDZ);
+	fxd = mpfr_get_d(fx,MPFR_RNDZ);
+	printf("Intervalo dividido en:%f\n",fxd);//fx=5-4*e^(-k*B)
+	mpfr_div_d(num,num,fxd,MPFR_RNDZ);
 	mpfr_get_z(result, num, MPFR_RNDZ);//se le asigna a result la parte entera de num
-	//mpz_div_ui(result,result,3);
+
 	//Liberar memoria
-	mpfr_clears(ln1,ln2,e,pow,num,NULL);
+	mpfr_clears(ln1,ln2,e,pow,num,fx,b,NULL);
 }
 
 void usage(){

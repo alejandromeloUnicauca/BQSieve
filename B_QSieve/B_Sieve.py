@@ -46,7 +46,7 @@ def main():
                     "matrix="+PATH_TMP+"/"+MATRIX_BIN, "wdir="+PATH_TMP, "interleaving=0"],
                     stdout=open("outputbwc.txt", "w"))
 
-    subprocess.run(["cp", PATH_TMP+"/K.sols0-64.0.txt", "/home/debian/prsa/B_QSieve/"])
+    subprocess.run(["cp", PATH_TMP+"/K.sols0-64.0.txt", "./"])
     hex_to_binary("K.sols0-64.0.txt", "vec.txt")
     finCado = time.time()
     tiempoSolM = finCado-inicioCado
