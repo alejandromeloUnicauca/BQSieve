@@ -151,13 +151,13 @@ int factoringBlocks(qs_struct * qs_data,  unsigned long endPos, unsigned long po
 	
 	for (unsigned long i = 0; i < endPos; i++)
 	{
-		if(blockDivision(qs_data->intervalo.Qxi[i],qs_data)==1){	
+		if(blockDivision(qs_data->intervalo.Qxi[i],qs_data)==1){
 			qs_data->n_BSuaves++;
-			if(qs_data->n_BSuaves==qs_data->base.length+1)return 0;
 			mpz_out_str(fp,10,qs_data->intervalo.Xi[posXi]);
 			fprintf(fp,";"); 
 			mpz_out_str(fp,10,qs_data->intervalo.Qxi[i]);
 			fprintf(fp,"\n");
+			if(qs_data->n_BSuaves==qs_data->base.length+1)return 0;
 		}
 		posXi++;
 	}
