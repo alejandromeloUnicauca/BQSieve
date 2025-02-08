@@ -124,6 +124,8 @@ int main(int argc, char **argv)
 	//digitos de N
 	size_t sizeN = mpz_sizeinbase(qs_data.n, 10);
 	printf("Numero de digitos decimales: %zu\n",sizeN);
+
+	printf("Cores:%d\n",CORES);
 	
 	//longitud de la base de primos
 	getPrimesBaseLength(qs_data.n,&qs_data.base.length);
