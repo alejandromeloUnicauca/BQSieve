@@ -26,7 +26,8 @@ def main():
     os.makedirs("results", exist_ok=True)
     
     cont = 1
-    for bits in range(100, 160, 10):
+    for bits in range(135, 176, 10):
+        print(f"Prueba N°{cont} de {bits} bits\n")
         with open("results/result.log", "a") as log:
             log.write(f"Prueba N°{cont} de {bits} bits \n")
         
@@ -36,12 +37,15 @@ def main():
             continue
         
         key = hex_to_dec(modulus)
+        print(f"N={key}\n")
+        print(f"Digitos de N:{len(str(key))}\n")
         with open("results/result.log", "a") as log:
             log.write(f"N={key}\n")
             log.write(f"Digitos de N:{len(str(key))}\n")
         
         # Prueba con 1, 2, 4, 8 y 16 procesadores
         for processors in [1, 2, 4, 8, 16]:
+            print(f"UP={processors}\n")
             with open("results/result.log", "a") as log:  # Abrir el archivo dentro del bucle
                 log.write(f"UP={processors}\n")
             run_b_sieve(key, bits, processors)
