@@ -279,13 +279,14 @@ mpz_t *sieving(qs_struct *qs_data, unsigned long *length) {
     printf("T:%ld\n",uT);
     
     //Cribado positivo
+    unsigned long sizeLocalInterval = (intervalLength*0.1)/CORES;
     double start_time = omp_get_wtime(); // Tiempo de inicio
     sp = sievingNaive(qs_data, POSITIVE);
 
     #pragma omp parallel num_threads(CORES)
     {
         unsigned long local_contXi = 0;
-        mpz_t *local_Xi = (mpz_t *)malloc((intervalLength*0.2) * sizeof(mpz_t));
+        mpz_t *local_Xi = (mpz_t *)malloc((sizeLocalInterval) * sizeof(mpz_t));
 
         #pragma omp for schedule(static)
         for (unsigned long i = 0; i < intervalLength; i++) {
@@ -316,7 +317,7 @@ mpz_t *sieving(qs_struct *qs_data, unsigned long *length) {
     #pragma omp parallel num_threads(CORES)
     {
         unsigned long local_contXi = 0;
-        mpz_t *local_Xi = (mpz_t *)malloc((intervalLength*0.2) * sizeof(mpz_t));
+        mpz_t *local_Xi = (mpz_t *)malloc((sizeLocalInterval) * sizeof(mpz_t));
 
         #pragma omp for schedule(static)
         for (unsigned long i = 0; i < intervalLength; i++) {
