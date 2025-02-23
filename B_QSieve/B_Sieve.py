@@ -15,7 +15,7 @@ def main():
     remove_temp_files()
     if len(sys.argv) > 2 and sys.argv[1] == "-h":
         num = int(sys.argv[2], 16)
-    else:
+    elif len(sys.argv) > 2:
         num = int(sys.argv[2])
 
     args = ["./B_QSieve"] + sys.argv[1:]

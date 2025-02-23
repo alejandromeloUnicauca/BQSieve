@@ -70,6 +70,8 @@ int main(int argc, char **argv)
 					fprintf (stderr, "La opción -%c requiere un argumento.\n", optopt);
 				else if (strchr("b", optopt) != NULL)
 					fprintf (stderr, "La opción -%c requiere un argumento.\n", optopt);
+				else if (strchr("c", optopt) != NULL)
+					fprintf (stderr, "La opción -%c requiere un argumento.\n", optopt);
 				else if (isprint (optopt))
 					fprintf(stderr, "Opción desconocida'-%c'.\n", optopt);
 				else
@@ -539,7 +541,7 @@ void getIntervalLength(mpz_t n, mpz_t result){
 }
 
 void usage(){
-	fprintf(stderr,"Uso: ./B_QSieve (-d | -h) <N> [-b <NBLOCKS>] \n");
+	fprintf(stderr,"Uso: ./B_QSieve (-d | -h) <N> [-b <NBLOCKS>] [-c <NCORES>] \n");
 	fprintf(stderr,"Opciones:\n");
 	fprintf(stderr,"-d	# Especifica que el numero N es decimal\n");
 	fprintf(stderr,"-h	# Especifica que el numero N es hexadecimal\n");
