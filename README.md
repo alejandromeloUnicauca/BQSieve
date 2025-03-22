@@ -38,10 +38,11 @@ Make
 
 ## Usage
 ```console
-Python B_Sieve.py (-d | -h) <N> [-b <NBLOCKS>]
+Python B_Sieve.py (-d | -h) <N> [-b <NBLOCKS>] [-c <CORES>]
 Opciones:
 -d # Especifica que el numero N es decimal
 -h # Especifica que el numero N es hexadecimal
 -b # Al usar esta opcion se deben especificar el numero de Bloques
+-c # Esta opcion especifica el numero de procesadores que se quiere utilizar en la fase de cribado
 ```
 ## License
