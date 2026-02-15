@@ -15,10 +15,9 @@ void insertarNumero(matrix * matriz, int posFila, int posColumna, int valor){
     if (matriz == NULL || matriz->data == NULL ||
         posFila < 0 || posFila >= matriz->n_rows ||	
         posColumna < 0 || posColumna >= matriz->n_cols) {
-		//printf("Fila:%d Columna:%d Valor:%d\n",posFila,posColumna,valor);
-		//printf("Fila:%d Columna:%d Valor:%d\n",posFila,posColumna,matriz->data[posFila][posColumna]);
-		fflush(stdout);
-        printf("Error: Parámetros no válidos en insertarNumero\n");
+		fprintf(stderr,"Error insertarNumero: Fila=%d (max=%d) Columna=%d (max=%d) Valor=%d\n",
+			posFila, matriz->n_rows, posColumna, matriz->n_cols, valor);
+		fflush(stderr);
         exit(EXIT_FAILURE);
     }
 	
@@ -95,22 +94,23 @@ int blockDivision(mpz_t Qxi, qs_struct * qs_data){
 		contGcd = 0;
 		mpz_gcd(gcd,QxiTemp,qs_data->blocks.block[i].prod_factors);
 		mpz_set(gcdAnt,gcd);
-		
-		while(mpz_cmp_ui(gcd,1)!=0){
-			mpz_divexact(QxiTemp,QxiTemp,gcd);
-			contGcd++;
-			mpz_gcd(gcd,QxiTemp,qs_data->blocks.block[i].prod_factors);
-			//si el maximo comun divisor cambia se guardan los datos en la tabla
-			if(mpz_cmp(gcd,gcdAnt)!=0){
-				//Se almacena en una estructura el gcd,
-				//las veces que se repite, y el bloque al que pertenece
-				block_table.data[cont].block = i;
-				mpz_init(block_table.data[cont].gcd);
-				mpz_set(block_table.data[cont].gcd,gcdAnt);
-				block_table.data[cont].periodo = contGcd;
-				mpz_set(gcdAnt,gcd);
-				contGcd = 0;
-				cont++;
+		if (mpz_cmp_ui(gcd,1) != 0) {
+			while(mpz_cmp_ui(gcd,1)!=0){
+				mpz_divexact(QxiTemp,QxiTemp,gcd);
+				contGcd++;
+				mpz_gcd(gcd,QxiTemp,qs_data->blocks.block[i].prod_factors);
+				//si el maximo comun divisor cambia se guardan los datos en la tabla
+				if(mpz_cmp(gcd,gcdAnt)!=0){
+					//Se almacena en una estructura el gcd,
+					//las veces que se repite, y el bloque al que pertenece
+					block_table.data[cont].block = i;
+					mpz_init(block_table.data[cont].gcd);
+					mpz_set(block_table.data[cont].gcd,gcdAnt);
+					block_table.data[cont].periodo = contGcd;
+					mpz_set(gcdAnt,gcd);
+					contGcd = 0;
+					cont++;
+				}
 			}
 		}
 	}
@@ -153,11 +153,23 @@ int factoringBlocks(qs_struct * qs_data,  unsigned long endPos, unsigned long po
 	{
 		if(blockDivision(qs_data->intervalo.Qxi[i],qs_data)==1){
 			qs_data->n_BSuaves++;
-			mpz_out_str(fp,10,qs_data->intervalo.Xi[posXi]);
-			fprintf(fp,";"); 
-			mpz_out_str(fp,10,qs_data->intervalo.Qxi[i]);
-			fprintf(fp,"\n");
-			if(qs_data->n_BSuaves==qs_data->base.length+1)return 0;
+			// Escribir (a*x+b);Q(x);roota
+			mpz_t lhs;
+			mpz_init(lhs);
+			mpz_mul(lhs, qs_data->poly.a, qs_data->intervalo.Xi[posXi]);
+			mpz_add(lhs, lhs, qs_data->poly.b);
+			mpz_out_str(fp, 10, lhs);
+			fprintf(fp, ";");
+			mpz_out_str(fp, 10, qs_data->intervalo.Qxi[i]);
+			fprintf(fp, ";");
+			mpz_out_str(fp, 10, qs_data->roota);
+			fprintf(fp, "\n");
+			fflush(fp);
+			mpz_clear(lhs);
+			if(qs_data->n_BSuaves==qs_data->base.length+1){
+				fclose(fp);
+				return 0;
+			}
 		}
 		posXi++;
 	}
@@ -193,8 +205,7 @@ int trialDivision(mpz_t Qxi, qs_struct * qs_data){
 	if(mpz_sgn(QxiTemp)==-1)
 		mpz_mul_si(QxiTemp,QxiTemp,-1);
 
-	for (unsigned long i = 0; i < qs_data->base.length;)
-	{
+	for (unsigned long i = 0; i < qs_data->base.length;){
 		mpz_t p;
 		mpz_init(p);
 		mpz_set(p,qs_data->base.primes[i].value);
@@ -219,9 +230,30 @@ int trialDivision(mpz_t Qxi, qs_struct * qs_data){
 		free(data_d);
 		return 1;
 	}else{
-		mpz_clear(QxiTemp);
-		free(data_d);
-		return 0;
+		// intentar emparejar parcial (1-large-prime)
+		// si QxiTemp es primo mayor que la base max pero razonable, lo guardamos
+		if (mpz_probab_prime_p(QxiTemp, 15) > 0) {
+			// guardar parcial en qs_data->partials
+			if (qs_data->partials.n >= qs_data->partials.capacity) {
+				unsigned long newcap = qs_data->partials.capacity == 0 ? 1024 : qs_data->partials.capacity * 2;
+				qs_data->partials.entries = realloc(qs_data->partials.entries, newcap * sizeof(partial_entry));
+				qs_data->partials.capacity = newcap;
+			}
+			// inicializar nueva entrada
+			unsigned long idx = qs_data->partials.n++;
+			mpz_init(qs_data->partials.entries[idx].rem);
+			mpz_init(qs_data->partials.entries[idx].lhs);
+			mpz_init(qs_data->partials.entries[idx].tofact);
+			mpz_set(qs_data->partials.entries[idx].rem, QxiTemp);
+			// dejar lhs y tofact vacíos; el llamador (factoringTrial) debe rellenarlos
+				mpz_clear(QxiTemp);
+				free(data_d);
+				return 0;
+		} else {
+				mpz_clear(QxiTemp);
+				free(data_d);
+				return 0;
+		}
 	}
 }
 
@@ -243,11 +275,28 @@ int factoringTrial(qs_struct * qs_data, unsigned long endPos, unsigned long posX
 	{
 		if(trialDivision(qs_data->intervalo.Qxi[i],qs_data)==1){
 			qs_data->n_BSuaves++;
-			if(qs_data->n_BSuaves==qs_data->base.length+1)return 0;
-			mpz_out_str(fp,10,qs_data->intervalo.Xi[posXi]);
-			fprintf(fp,";"); 
-			mpz_out_str(fp,10,qs_data->intervalo.Qxi[i]);
-			fprintf(fp,"\n");
+			if(qs_data->n_BSuaves==qs_data->base.length+1){
+				fclose(fp);
+				return 0;
+			}
+			// Escribir (a*x+b);Q(x);roota
+			mpz_t lhs;
+			mpz_init(lhs);
+			mpz_mul(lhs, qs_data->poly.a, qs_data->intervalo.Xi[posXi]);
+			mpz_add(lhs, lhs, qs_data->poly.b);
+			mpz_out_str(fp, 10, lhs);
+			fprintf(fp, ";");
+			mpz_out_str(fp, 10, qs_data->intervalo.Qxi[i]);
+			fprintf(fp, ";");
+			mpz_out_str(fp, 10, qs_data->roota);
+			fprintf(fp, "\n");
+			fflush(fp);
+			mpz_clear(lhs);
+		} else {
+			// Parciales: por ahora solo se almacenan.
+			// El emparejamiento de parciales requiere insertar vectores
+			// combinados en la matriz, lo cual aún no está implementado
+			// correctamente. No incrementar n_BSuaves aquí.
 		}
 		posXi++;
 	}

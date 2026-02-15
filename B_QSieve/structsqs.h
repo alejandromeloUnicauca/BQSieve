@@ -1,3 +1,6 @@
+#ifndef STRUCTSQS_H
+#define STRUCTSQS_H
+
 /**
  * @file
  * @author Jhon Alejandro Melo<alejandromelo@unicauca.edu.co>
@@ -85,6 +88,25 @@ typedef struct{
 	mpz_t length;
 }interval;
 
+/* Definición de polinomio MPQS colocada antes de qs_struct */
+typedef struct{
+    mpz_t a;
+    mpz_t b;
+    mpz_t c;
+} mpqs_poly;
+
+typedef struct{
+    mpz_t rem;    // resto grande (possible large prime)
+    mpz_t lhs;    // valor a*x+b asociado
+    mpz_t tofact; // valor 'nf' (a*x*x + 2*b*x + c) o equivalente
+} partial_entry;
+
+typedef struct{
+    partial_entry * entries;
+    unsigned long n;
+    unsigned long capacity;
+} partials_table;
+
 /**
  * @brief estructura que contiene los datos necesarios para factorizar
  * un numero n
@@ -101,6 +123,14 @@ typedef struct{
 	mpz_t n;
 	/**longitud del intervalo positivo*/
 	interval intervalo;
+	/**polinomio MPQS actual (opcional)*/
+	mpqs_poly poly;
+	/**raíz roota persistente para generar sucesivos polinomios MPQS*/
+	mpz_t roota;
+	/**flag para usar MPQS*/
+	int use_mpqs;
+	/** tabla de parciales para 1LP */
+	partials_table partials;
 }qs_struct;
 
 //divisiones sucesivas
@@ -113,3 +143,5 @@ enum TypeSieving{
 	POSITIVE,
 	NEGATIVE
 };
+
+#endif // STRUCTSQS_H

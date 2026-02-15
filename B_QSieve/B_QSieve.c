@@ -18,8 +18,8 @@ void createBlocks(int n, qs_struct * qs_data);
 void crearMatrizNula(qs_struct * qs_data);
 void imprimirMatriz(matrix matriz);  
 void getPrimesBaseLength(mpz_t n, long * result);
-void getIntervalLength(mpz_t n, mpz_t result);
-long generatePrimesBase(mpz_t n, long base_length, prime * primes);
+void getIntervalLength(long base_length, mpz_t result);
+long generatePrimesBase(mpz_t n, long bound, prime * primes);
 void freeStruct(qs_struct * qs_data);
 void usage();
 
@@ -92,8 +92,31 @@ int main(int argc, char **argv)
 	qs_struct qs_data;
 	clock_t t_inicio, t_final;
 
-	//Instancia de variables
-	qs_data.n_BSuaves = 0;   
+	//Inicializar campos a valores seguros
+	qs_data.n_BSuaves = 0;
+	qs_data.base.primes = NULL;
+	qs_data.base.length = 0;
+	qs_data.blocks.block = NULL;
+	qs_data.blocks.length = 0;
+	qs_data.mat.data = NULL;
+	qs_data.mat.n_rows = 0;
+	qs_data.mat.n_cols = 0;
+	qs_data.intervalo.Xi = NULL;
+	qs_data.intervalo.Qxi = NULL;
+	qs_data.intervalo.length_Xi = 0;
+	qs_data.intervalo.length_Qxi = 0;
+	qs_data.use_mpqs = 0;
+	// inicializar mpz_t del polinomio
+	mpz_init(qs_data.poly.a);
+	mpz_init(qs_data.poly.b);
+	mpz_init(qs_data.poly.c);
+	// inicializar roota persistente para MPQS (0 indica no inicializado)
+	mpz_init(qs_data.roota);
+	mpz_set_ui(qs_data.roota, 0);
+	// inicializar tabla de parciales
+	qs_data.partials.entries = NULL;
+	qs_data.partials.n = 0;
+	qs_data.partials.capacity = 0;
 	mpz_inits(qs_data.n,qs_data.intervalo.length,NULL);
 	if(bvalue!=NULL)qs_data.blocks.length = atol(bvalue);
 	else qs_data.blocks.length = 0;
@@ -133,10 +156,6 @@ int main(int argc, char **argv)
 	getPrimesBaseLength(qs_data.n,&qs_data.base.length);
 	printf("Longitud de la base de primos:%ld\n", qs_data.base.length);
 	
-	//Intervalo del polinomio
-	getIntervalLength(qs_data.n,qs_data.intervalo.length);
-	gmp_printf("Intervalo del polinomio:%Zd\n", qs_data.intervalo.length);
-	
 	//Generar base de primos
 	qs_data.base.primes = (prime*)malloc((qs_data.base.length)*sizeof(prime));
 	
@@ -144,7 +163,17 @@ int main(int argc, char **argv)
 	printf("Generando base de primos...\n");
 	long residuos = generatePrimesBase(qs_data.n,qs_data.base.length,qs_data.base.primes);
 	t_final = clock();
+	// ajustar longitud real de la base al número de residuos encontrados
+	qs_data.base.length = residuos;
+	// reducir buffer al tamaño real
+	if (residuos > 0) {
+		qs_data.base.primes = (prime*)realloc(qs_data.base.primes, residuos * sizeof(prime));
+	}
 	printf("Base de primos generada. %ld primos en la base\n",residuos);
+
+	//Intervalo del polinomio (cubo de la base de primos)
+	getIntervalLength(qs_data.base.length, qs_data.intervalo.length);
+	gmp_printf("Intervalo del polinomio:%Zd\n", qs_data.intervalo.length);
 
 	double segundos = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;
 	printf("tiempo de creacion de la base:%fs\n",segundos);
@@ -164,38 +193,85 @@ int main(int argc, char **argv)
 	unsigned long lengthXi = 0;
 	
 	printf("Cribando...\n");
-	double start_time = omp_get_wtime(); // Tiempo de inicio
-	mpz_t *Xi = sieving(&qs_data,&lengthXi); 
-    double end_time = omp_get_wtime(); // Tiempo de fin
-	double segundosCriba = end_time-start_time;
-	printf("tiempo de cribado: %f segundos\n", segundosCriba); 
+	double start_time = omp_get_wtime();
+    mpz_t *Xi = NULL;
+    // Construir Xi = x en [-xmax..xmax]
+    unsigned long fb_len = qs_data.base.length;
+    unsigned long xmax = fb_len * 60 * 4;
+    unsigned long total = xmax * 2 + 1;
+    Xi = (mpz_t *)malloc(total * sizeof(mpz_t));
+    if (Xi == NULL) {
+        fprintf(stderr, "Error al asignar memoria para Xi\n");
+        exit(EXIT_FAILURE);
+    }
+    for (unsigned long i = 0; i < total; i++) {
+        mpz_init(Xi[i]);
+        long val = (long)i - (long)xmax;
+        mpz_set_si(Xi[i], val);
+    }
+    lengthXi = total;
+    double end_time = omp_get_wtime();
+    double segundosCriba = end_time-start_time;
+    printf("tiempo de cribado: %f segundos\n", segundosCriba); 
 
-	printf("Intervalo despues del cribado:%ld\n",lengthXi);
-	qs_data.intervalo.length_Xi = lengthXi;
-	//qs_data.intervalo.length_Qxi = lengthXi;
-	qs_data.intervalo.Xi = Xi;
+    printf("Intervalo despues del cribado:%ld\n",lengthXi);
+    qs_data.intervalo.length_Xi = lengthXi;
+    //qs_data.intervalo.length_Qxi = lengthXi;
+    qs_data.intervalo.Xi = Xi;
 	
 	printf("Calculando Polinomio...\n");
 	t_inicio = clock();
 	crearMatrizNula(&qs_data);
 
 	int res = 1;
-	unsigned long posXi = 0;
-	unsigned long endPos = 0;
-	long numLote = 1;
-	unsigned long sizeLote = 1500;
-	//Se asigna NULL al intervalo de polinomio inicial 
 	qs_data.intervalo.Qxi = NULL;
-	while(endPos<lengthXi && res==1){
-		endPos=fermat(&qs_data,numLote++,sizeLote);
-		if(qs_data.blocks.length > 0){
-			res = factoringBlocks(&qs_data,qs_data.intervalo.length_Qxi,posXi*sizeLote);
+
+	long polinomio_count = 0;
+	long prev_n_BSuaves = qs_data.n_BSuaves;
+	while(res==1){
+		// MPQS: cada iteración genera un nuevo polinomio y evalúa Q(x)
+		// para todo el rango Xi.
+		generate_mpqs_poly(&qs_data);
+
+		unsigned long npos = qs_data.intervalo.length_Xi;
+
+		// liberar Qxi previo si existe
+		if (qs_data.intervalo.Qxi != NULL) {
+			unsigned long oldLen = qs_data.intervalo.length_Qxi;
+			for (unsigned long i = 0; i < oldLen; i++) {
+				mpz_clear(qs_data.intervalo.Qxi[i]);
+			}
+			free(qs_data.intervalo.Qxi);
+			qs_data.intervalo.Qxi = NULL;
+			qs_data.intervalo.length_Qxi = 0;
 		}
-		else{
-			res = factoringTrial(&qs_data,qs_data.intervalo.length_Qxi,posXi*sizeLote);  
+
+		// asignar nuevo array Qxi para rango completo
+		qs_data.intervalo.Qxi = (mpz_t *)malloc(npos * sizeof(mpz_t));
+		if (qs_data.intervalo.Qxi == NULL) {
+			fprintf(stderr, "Error al asignar memoria para Qxi\n");
+			exit(EXIT_FAILURE);
 		}
-		posXi++;
+		qs_data.intervalo.length_Qxi = npos;
+		for (unsigned long i = 0; i < npos; i++) {
+			mpz_init(qs_data.intervalo.Qxi[i]);
+			eval_mpqs_Qx(&qs_data, qs_data.intervalo.Xi[i], qs_data.intervalo.Qxi[i]);
+		}
+
+		polinomio_count++;
+		if (qs_data.blocks.length > 0) {
+			res = factoringBlocks(&qs_data, npos, 0);
+		} else {
+			res = factoringTrial(&qs_data, npos, 0);
+		}
+		long found_this = qs_data.n_BSuaves - prev_n_BSuaves;
+		printf("Polinomio %ld procesado: encontrados %ld numeros B_suaves en este polinomio (total: %ld)\n",
+			polinomio_count, found_this, qs_data.n_BSuaves);
+		fflush(stdout);
+		prev_n_BSuaves = qs_data.n_BSuaves;
 	}
+	printf("Polinomios procesados: %ld\n", polinomio_count);
+	fflush(stdout);
 	printf("Numeros B_Suaves encontrados:%ld\n",qs_data.n_BSuaves);
 	t_final = clock();
 	double segundosPolinomio = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;
@@ -204,6 +280,14 @@ int main(int argc, char **argv)
 	
 	printf("Escribiendo matriz...");
 	imprimirMatriz(qs_data.mat);
+
+	// Guardar roota en archivo para que mulPoli lo use
+	FILE *fr = fopen("roota.txt", "w");
+	if (fr) {
+		mpz_out_str(fr, 10, qs_data.roota);
+		fprintf(fr, "\n");
+		fclose(fr);
+	}
 	
 	//Liberar Memoria
 	freeStruct(&qs_data); 
@@ -318,7 +402,7 @@ void createBlocks(int n, qs_struct * qs_data){
 	}
 	
 	//asigno el tamaño del ultimo bloque y el la
-	//multiplicacion de los facotores del ultimo bloque
+	//multiplicacion de los facatores del ultimo bloque
 	qs_data->blocks.block[contBlock].length = contFact;
 	mpz_init(qs_data->blocks.block[contBlock].prod_factors);
 	mpz_set(qs_data->blocks.block[contBlock].prod_factors,mulTemp);
@@ -335,8 +419,8 @@ void freeStruct(qs_struct * qs_data){
 		//mpfr_printf ("log(p):%.2Rf\n", qs_data->base.primes[i].log_value);
 		mpfr_clear(qs_data->base.primes[i].log_value);
 	}
-	
-	free(qs_data->base.primes); 	
+
+	free(qs_data->base.primes); 
 	
 	//liberar memoria de los bloques
 	if(qs_data->blocks.length > 0){
@@ -357,20 +441,40 @@ void freeStruct(qs_struct * qs_data){
 	}
 
 	if(qs_data->intervalo.Qxi!=NULL){
-		for (unsigned long i = 0; i < 100; i++)
+		unsigned long long lenQ = qs_data->intervalo.length_Qxi;
+		for (unsigned long long i = 0; i < lenQ; i++)
 		{
 			mpz_clear(qs_data->intervalo.Qxi[i]);
 		}
 		free(qs_data->intervalo.Qxi);
+		qs_data->intervalo.Qxi = NULL;
+		qs_data->intervalo.length_Qxi = 0;
 	}
 
 	if(qs_data->intervalo.Xi!=NULL){
-		for (unsigned long i = 0; i < 100; i++)
+		unsigned long long lenXi = qs_data->intervalo.length_Xi;
+		for (unsigned long long i = 0; i < lenXi; i++)
 		{
 			mpz_clear(qs_data->intervalo.Xi[i]);
 		}
 		free(qs_data->intervalo.Xi);
+		qs_data->intervalo.Xi = NULL;
+		qs_data->intervalo.length_Xi = 0;
 	}
+
+	// liberar parciales
+	for (unsigned long long i = 0; i < qs_data->partials.n; i++) {
+		mpz_clear(qs_data->partials.entries[i].rem);
+		mpz_clear(qs_data->partials.entries[i].lhs);
+		mpz_clear(qs_data->partials.entries[i].tofact);
+	}
+	free(qs_data->partials.entries);
+
+	// liberar roota y polinomio MPQS
+	mpz_clear(qs_data->roota);
+	mpz_clear(qs_data->poly.a);
+	mpz_clear(qs_data->poly.b);
+	mpz_clear(qs_data->poly.c);
 
 	
 	//liberar memoria de la matriz
@@ -392,76 +496,57 @@ void freeStruct(qs_struct * qs_data){
  * @return retorna el numero de 
  * residuos encontrados
  */
-long generatePrimesBase(mpz_t n, long base_length, prime * primes){
-	//TODO:Quitar archivo de residuos.txt
-	long contRes = 0;//contador de residuos encontrados
+long generatePrimesBase(mpz_t n, long bound, prime * primes){
+    long contRes = 0; // contador de residuos encontrados
 
-	mpz_t p;//variable temporal para los primos del archivo
-	mpz_init(p);
-	
-	FILE * file;//file primes
-	FILE * fr;//file residuos
-	if((fr = fopen("residuos.txt","w")) == NULL){
-		perror("fopen");
-		exit(EXIT_FAILURE);
-	}
-	fclose(fr);
-	
-	long contn = 0;//contador de primos que se ultilizan de primes.txt
-	
-	//si el archivo primes.txt no existe termina
-	if ((file = fopen("primes.txt", "r")) == NULL) // open file
-	{
-		fprintf(stderr,"Falta archivo primes.txt");
-		exit(EXIT_FAILURE);
-	}
-	
-	char buf[BUFSIZ];
-	while(!feof(file)){
-		contn++;
-		memset(buf, 0, BUFSIZ);
-		if(fgets(buf,BUFSIZ,file)!=NULL){
-			mpz_set_str(p, buf, 10);//se asigna un numero del archivo a p
-			
-			//si n es residuo cuadratico mod p se agrega al archivo
-			if((mpz_legendre(n,p)==1) || (mpz_cmp_ui(p,2)==0)){
-				//asigno memoria a los valores de prime
-				mpz_init(primes[contRes].value);
-				mpfr_init(primes[contRes].log_value);
-				
-				//almaceno el primo y el logaritmo del primo
-				mpz_set(primes[contRes].value,p);
-				
-				
-				mpfr_t pTemp;
-				mpfr_init(pTemp);
-				mpfr_set_z(pTemp,p,MPFR_RNDZ);
-				mpfr_log(primes[contRes].log_value, pTemp, MPFR_RNDZ);//ln(p)
-				primes[contRes].llog_value = mpfr_get_ui(primes[contRes].log_value,MPFR_RNDZ);
-				
-				mpfr_clear(pTemp);
-				if((fr = fopen("residuos.txt","a"))==NULL){
-					perror("fopen");
-					exit(EXIT_FAILURE);
-				}
-				
-				contRes++;
-				
-				fprintf(fr,"%s",buf);
-				fclose(fr);
-			}
-			
-			//si los residuos es igual a la longitud termina
-			if((base_length==contRes)){
-				break;
-			}
-			
-		}
-	}
-	mpz_clear(p);
-	fclose(file);
-	printf("Se usaron %ld primos\n",contn);  
-	return contRes;
+    mpz_t p; // variable temporal para los primos del archivo
+    mpz_init(p);
+
+    FILE * file; // file primes
+    // si el archivo primes.txt no existe termina
+    if ((file = fopen("primes.txt", "r")) == NULL) // open file
+    {
+        fprintf(stderr,"Falta archivo primes.txt\n");
+        exit(EXIT_FAILURE);
+    }
+
+    char buf[BUFSIZ];
+    while (fgets(buf, BUFSIZ, file) != NULL) {
+        // eliminar espacios en blanco iniciales
+        char *ptr = buf;
+        while (*ptr && isspace((unsigned char)*ptr)) ptr++;
+        if (*ptr == '\0') continue;
+
+        if (mpz_set_str(p, ptr, 10) != 0) continue; // parse error
+
+        unsigned long p_ui = mpz_get_ui(p);
+        if ((long)p_ui > bound) break; // hemos pasado el límite
+
+        // si n es residuo cuadratico mod p se agrega
+        if ((mpz_legendre(n,p) == 1) || (mpz_cmp_ui(p,2) == 0)){
+            // asigno memoria a los valores de prime
+            mpz_init(primes[contRes].value);
+            mpfr_init(primes[contRes].log_value);
+
+            // almaceno el primo y el logaritmo del primo
+            mpz_set(primes[contRes].value,p);
+
+            mpfr_t pTemp;
+            mpfr_init(pTemp);
+            mpfr_set_z(pTemp,p,MPFR_RNDZ);
+            mpfr_log(primes[contRes].log_value, pTemp, MPFR_RNDZ); // ln(p)
+            primes[contRes].llog_value = mpfr_get_ui(primes[contRes].log_value,MPFR_RNDZ);
+
+            mpfr_clear(pTemp);
+
+            contRes++;
+        }
+    }
+
+    mpz_clear(p);
+    fclose(file);
+    printf("Se usaron %ld primos\n",contRes);
+    return contRes;
 }
 
 /**
@@ -471,73 +556,33 @@ long generatePrimesBase(mpz_t n, long base_length, prime * primes){
  * @param result: variable en la que se devuelve el valor calculado
  */
 void getPrimesBaseLength(mpz_t n, long * result){
-	//formuala: result = ((e^sqrt(ln(n)*ln(ln(n))))^(sqrt(2)/4))
-	
-	//Declaracion de variables
-	mpfr_t num, ln1, ln2, e, pow;
-	
-	//inicializacion de variables
-	mpfr_inits(ln1,ln2,e,pow,NULL);
-	mpfr_init2(num,mpz_sizeinbase(n,2));
-	mpfr_set_z(num,n,MPFR_RNDN);
-
-	mpfr_set_str(e, "2.71828182845904523536", 10, MPFR_RNDZ);//define euler
-	mpfr_set_str(pow, "0.3535533905932738", 10, MPFR_RNDZ);//define sqrt(2)/4
-	mpfr_log(ln1, num, MPFR_RNDZ);//ln1= log(num)
-	mpfr_log(ln2, ln1,MPFR_RNDZ);//ln2=log(ln1)
-	mpfr_mul(num, ln1, ln2, MPFR_RNDZ);//num=ln1*ln2
-	mpfr_sqrt(num, num, MPFR_RNDZ);//sqrt(num)
-	mpfr_pow (num, e, num, MPFR_RNDZ);//num=e^n
-	mpfr_pow (num, num, pow, MPFR_RNDZ);//num=num^pow
-	//mpfr_get_z(result, num, MPFR_RNDZ);//se le asigna a result la parte entera de num
-	
-	*result = mpfr_get_ui(num,MPFR_RNDZ);
-	mpfr_clears(num,ln1,ln2,e,pow,NULL);
+	// Usar heurística similar al script Python para obtener una base más grande:
+	// bound = int(5 * (log10(n))^2)
+	mpfr_t ln, log10n, tmp;
+	mpfr_inits(ln, log10n, tmp, NULL);
+	mpfr_set_z(ln, n, MPFR_RNDN);
+	// ln = log(n)
+	mpfr_log(ln, ln, MPFR_RNDZ);
+	// log10(n) = ln(n) / ln(10)
+	mpfr_set_str(tmp, "2.302585092994046", 10, MPFR_RNDZ); // ln(10)
+	mpfr_div(log10n, ln, tmp, MPFR_RNDZ);
+	// tmp = 5 * (log10(n))^2
+	mpfr_mul(tmp, log10n, log10n, MPFR_RNDZ);
+	mpfr_mul_ui(tmp, tmp, 5, MPFR_RNDZ);
+	// devolver como long
+	*result = (long) mpfr_get_ui(tmp, MPFR_RNDZ);
+	mpfr_clears(ln, log10n, tmp, NULL);
 }
 
 /**
  * @brief calcula el intervalo en el que se deben probar los residuos 
- * cuadraticos del numero n
- * @param n: numero que se le calcula el intervalo que necesita
- * @param result: variable que se ultiliza para devolver el resultado
+ * cuadraticos como el cuadrado de la longitud de la base de primos
+ * @param base_length: longitud de la base de primos
+ * @param result: variable que se utiliza para devolver el resultado (base_length^2)
  */
-void getIntervalLength(mpz_t n, mpz_t result){
-	//formuala: result = ((e^sqrt(ln(n)*ln(ln(n))))^(sqrt(2)/4))^3
-	
-	//Declaracion de variables
-	mpfr_t num, ln1, ln2, e, pow, fx, b;
-	double k = -0.0004;
-	double fxd = 1;
-	//inicializacion de variables
-	mpfr_inits(num,ln1,ln2,e,pow,fx,b,NULL);
-
-	mpfr_init2(num,mpz_sizeinbase(n,2));
-	mpfr_set_z(num,n,MPFR_RNDN);
-
-	mpfr_set_str(e, "2.71828182845904523536", 10, MPFR_RNDZ);//define euler
-	mpfr_set_str(pow, "0.3535533905932738", 10, MPFR_RNDZ);//define sqrt(2)/4
-	mpfr_log(ln1, num, MPFR_RNDZ);//ln1 = log(num)
-	mpfr_log(ln2, ln1,MPFR_RNDZ);//ln2 = log(log(num))
-	mpfr_mul(num, ln1, ln2, MPFR_RNDZ);//num = ln1*ln1
-	mpfr_sqrt(num, num, MPFR_RNDZ);// num = sqrt(num)
-	mpfr_pow(num, e, num, MPFR_RNDZ);// num = e^num
-	mpfr_pow(num, num, pow, MPFR_RNDZ);// num = num^pow
-	mpfr_set(b,num,MPFR_RNDZ);// valor de la base de primos B
-
-	mpfr_pow_si(num, num, 3, MPFR_RNDZ);//num = num^3
-
-	mpfr_set_ui(fx,5,MPFR_RNDZ);
-	mpfr_mul_d(b,b,k,MPFR_RNDZ);
-	mpfr_pow(b,e,b,MPFR_RNDZ);
-	mpfr_mul_ui(b,b,4,MPFR_RNDZ);
-	mpfr_sub(fx,fx,b,MPFR_RNDZ);
-	fxd = mpfr_get_d(fx,MPFR_RNDZ);
-	printf("Intervalo dividido en:%f\n",fxd);//fx=5-4*e^(-k*B)
-	mpfr_div_d(num,num,fxd,MPFR_RNDZ);
-	mpfr_get_z(result, num, MPFR_RNDZ);//se le asigna a result la parte entera de num
-
-	//Liberar memoria
-	mpfr_clears(ln1,ln2,e,pow,num,fx,b,NULL);
+void getIntervalLength(long base_length, mpz_t result){
+	mpz_set_si(result, base_length);
+	mpz_pow_ui(result, result, 2);
 }
 
 void usage(){

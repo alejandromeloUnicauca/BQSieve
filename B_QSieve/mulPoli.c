@@ -36,12 +36,6 @@ int main(int argc, char * argv[]){
 	mpz_init(qx);
 	mpz_init(tmp);
 	
-	/*mpz_set_str(qx,"30717132431278347664",10);
-	mpz_set_si(tmp,-2818568624543165);
-	printf("%d",mpz_congruent_p(qx,tmp,n));
-	
-	
-	exit(EXIT_SUCCESS);*/
 	mpz_set_ui(qx,1);
 	char buf[BUFSIZ];
 	while(!feof(file)){
@@ -55,6 +49,26 @@ int main(int argc, char * argv[]){
 	
 	if(mpz_sgn(qx)<0)
 		mpz_mul_si(qx,qx,-1);
+
+	// En modo MPQS: leer roota_list.txt (un roota por relación) y multiplicar qx por cada roota²
+	// Relación: (a*x+b)² = roota² * Q(x) mod N, así que ∏(a*x+b)² = ∏(roota_i² * Q_i)
+	FILE *rl = fopen("roota_list.txt", "r");
+	if (rl != NULL) {
+		mpz_t ri;
+		mpz_init(ri);
+		while(!feof(rl)){
+			memset(buf, 0, BUFSIZ);
+			if(fgets(buf,BUFSIZ,rl)!=NULL){
+				if(buf[0]=='\n' || buf[0]=='\0') continue;
+				mpz_set_str(ri, buf, 10);
+				// qx *= ri^2
+				mpz_mul(qx, qx, ri);
+				mpz_mul(qx, qx, ri);
+			}
+		}
+		fclose(rl);
+		mpz_clear(ri);
+	}
 	/*mpz_out_str(stdout,10,qx);
 	printf("\n");*/
 	int res = mpz_perfect_square_p(qx);

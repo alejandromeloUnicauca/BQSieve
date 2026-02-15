@@ -187,17 +187,61 @@ float * sievingNaive(qs_struct * qs_data, enum TypeSieving typeSieving) {
 
         mpz_set(p, qs_data->base.primes[i].value);
 
+        // Diagnostic prints for first few primes
+        if (i < 5) {
+            // print from master thread to avoid clutter
+            if (omp_get_thread_num() == 0) {
+                gmp_printf("[DIAG] prime[%d]=%Zd use_mpqs=%d\n", i, p, qs_data->use_mpqs);
+                if (qs_data->use_mpqs) {
+                    mpz_t a_mod_p, b_mod_p;
+                    mpz_inits(a_mod_p, b_mod_p, NULL);
+                    mpz_mod(a_mod_p, qs_data->poly.a, p);
+                    mpz_mod(b_mod_p, qs_data->poly.b, p);
+                    gmp_printf("[DIAG] poly.a mod p = %Zd, poly.b mod p = %Zd\n", a_mod_p, b_mod_p);
+                    mpz_clears(a_mod_p, b_mod_p, NULL);
+                }
+            }
+        }
+
         //printf("Iteracion: %d con primo:%ld desde hilo:%d, positivo:%d\n",i, mpz_get_ui(p), omp_get_thread_num(),typeSieving);
 
         float logp = mpfr_get_flt(qs_data->base.primes[i].log_value, MPFR_RNDZ);
 
         // Calcular raíces usando el método de Shanks-Tonelli
         shanksTonelli(n, p, x1, x2);
-        mpz_sub(x1, x1, raizn);
-        mpz_mod(x1, x1, p);
 
-        mpz_sub(x2, x2, raizn);
-        mpz_mod(x2, x2, p);
+        if (!qs_data->use_mpqs) {
+            mpz_sub(x1, x1, raizn);
+            mpz_mod(x1, x1, p);
+
+            mpz_sub(x2, x2, raizn);
+            mpz_mod(x2, x2, p);
+        } else {
+            // MPQS: raíces para ax + b = +/- sqrt(N) (mod p)
+            mpz_t a_inv, b_mod, r1, r2;
+            mpz_inits(a_inv, b_mod, r1, r2, NULL);
+            mpz_set(r1, x1);
+            mpz_set(r2, x2);
+            // b mod p
+            mpz_mod(b_mod, qs_data->poly.b, p);
+            // calcular inverso de a modulo p
+            if (mpz_invert(a_inv, qs_data->poly.a, p) == 0) {
+                // a no invertible modulo p, saltar primo
+                mpz_clears(a_inv, b_mod, r1, r2, NULL);
+                mpz_clears(x1, x2, p, NULL);
+                continue;
+            }
+            // x = a^{-1}*(r - b) mod p
+            mpz_sub(x1, r1, b_mod);
+            mpz_mul(x1, x1, a_inv);
+            mpz_mod(x1, x1, p);
+
+            mpz_sub(x2, r2, b_mod);
+            mpz_mul(x2, x2, a_inv);
+            mpz_mod(x2, x2, p);
+
+            mpz_clears(a_inv, b_mod, r1, r2, NULL);
+        }
 
         // Intercambiar x1 y x2 si es necesario
         if (mpz_cmp(x1, x2) == 1) {
@@ -299,16 +343,26 @@ mpz_t *sieving(qs_struct *qs_data, unsigned long *length) {
 
         #pragma omp critical
         {
-            memcpy(&Xi[contXi], local_Xi, local_contXi * sizeof(mpz_t));
+            // Copiar cada mpz_t individualmente para evitar shallow copy
+            for (unsigned long k = 0; k < local_contXi; k++) {
+                mpz_init(Xi[contXi + k]);
+                mpz_set(Xi[contXi + k], local_Xi[k]);
+            }
             contXi += local_contXi;
         }
 
+        // liberar local_Xi correctamente
+        for (unsigned long k = 0; k < local_contXi; k++) {
+            mpz_clear(local_Xi[k]);
+        }
         free(local_Xi);
     }
 
     free(sp);
     double end_time = omp_get_wtime(); // Tiempo de fin
     printf("Tiempo de ejecución de la sección positiva: %f segundos\n", end_time - start_time);
+    // Diagnostic: cuantos Xi se consiguieron tras la sección positiva
+    printf("[DIAG] Xi after positive section: %ld\n", contXi);
 
     //Cribado negativo
     start_time = omp_get_wtime(); // Tiempo de inicio
@@ -330,16 +384,26 @@ mpz_t *sieving(qs_struct *qs_data, unsigned long *length) {
 
         #pragma omp critical
         {
-            memcpy(&Xi[contXi], local_Xi, local_contXi * sizeof(mpz_t));
+            // Copiar cada mpz_t individualmente para evitar shallow copy
+            for (unsigned long k = 0; k < local_contXi; k++) {
+                mpz_init(Xi[contXi + k]);
+                mpz_set(Xi[contXi + k], local_Xi[k]);
+            }
             contXi += local_contXi;
         }
 
+        // liberar local_Xi correctamente
+        for (unsigned long k = 0; k < local_contXi; k++) {
+            mpz_clear(local_Xi[k]);
+        }
         free(local_Xi);
     }
 
     free(sn);
     end_time = omp_get_wtime(); // Tiempo de fin
     printf("Tiempo de ejecución de la sección negativa: %f segundos\n", end_time - start_time);
+    // Diagnostic: cuantos Xi se consiguieron tras la sección negativa
+    printf("[DIAG] Xi after negative section: %ld\n", contXi);
 
     *length = contXi;
 
@@ -351,4 +415,4 @@ mpz_t *sieving(qs_struct *qs_data, unsigned long *length) {
     return Xi;
 }
 
-	
+

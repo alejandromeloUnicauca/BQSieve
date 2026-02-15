@@ -64,7 +64,7 @@ def main():
     tiempof = tiempoBQS+tiempoSolM+tiempomcd
     print(f'Tiempo final:{tiempof}s')
 
-    remove_temp_files()
+    #remove_temp_files()
 
 
 def process_polynomial(num):
@@ -79,18 +79,26 @@ def process_polynomial(num):
                 f2 = line_vec[i-1]
 
                 if f2 == "1":
-                    f1 = line_polinomio.split(";")[1].strip()
-                    pos = line_polinomio.split(";")[0].strip()
+                    parts = line_polinomio.strip().split(";")
+                    pos = parts[0].strip()
+                    f1 = parts[1].strip()
+                    # Si hay tercera columna es roota (modo MPQS)
+                    rel_roota = parts[2].strip() if len(parts) > 2 else None
 
-                    with open("salida.txt", "a") as salida_file, open("pos.txt", "a") as pos_file:
+                    with open("salida.txt", "a") as salida_file, \
+                         open("pos.txt", "a") as pos_file:
                         salida_file.write(f1 + "\n")
                         pos_file.write(pos + "\n")
+                    if rel_roota:
+                        with open("roota_list.txt", "a") as rl:
+                            rl.write(rel_roota + "\n")
 
-        exit_status = subprocess.run(["./mulPoli", str(num)], stdout=open("salidap.txt", "a")).returncode
+        mulpoli_args = ["./mulPoli", str(num)]
+        exit_status = subprocess.run(mulpoli_args, stdout=open("salidap.txt", "a")).returncode
         if exit_status == 0:
             break
 
-        subprocess.run(["rm", "salida.txt", "pos.txt"])
+        subprocess.run(["rm", "-f", "salida.txt", "pos.txt", "roota_list.txt"])
 
 def hex_to_binary(file_path, output_file):
     """
@@ -112,7 +120,7 @@ def hex_to_binary(file_path, output_file):
                 out.write(bin_num_padded + "\n")
 
 def remove_temp_files():
-    files_to_remove = [MATRIX_BIN, MATRIX_RW_BIN, MATRIX_CW_BIN, "matrix.txt", "residuos.txt", "outputbwc.txt", "K.sols0-64.0.txt", "salidap.txt", "vec.txt", "pos.txt", "salida.txt", "polinomio.txt"]
+    files_to_remove = [MATRIX_BIN, MATRIX_RW_BIN, MATRIX_CW_BIN, "matrix.txt", "residuos.txt", "outputbwc.txt", "K.sols0-64.0.txt", "salidap.txt", "vec.txt", "pos.txt", "salida.txt", "polinomio.txt", "roota.txt", "roota_list.txt"]
     [os.remove(file) for file in files_to_remove if os.path.exists(file)]
     if(os.path.exists(PATH_TMP)):
         shutil.rmtree(PATH_TMP)
