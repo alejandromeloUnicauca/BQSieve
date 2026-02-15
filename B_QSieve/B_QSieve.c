@@ -190,35 +190,20 @@ int main(int argc, char **argv)
 		printf("tiempo de creacion de los bloques:%fs\n",segundos);	
 	}
 	
-	unsigned long lengthXi = 0;
+	unsigned long lengthXi __attribute__((unused)) = 0;
 	
 	printf("Cribando...\n");
 	double start_time = omp_get_wtime();
-    mpz_t *Xi = NULL;
-    // Construir Xi = x en [-xmax..xmax]
+
+    // xmax define el rango de criba [-xmax..+xmax]
     unsigned long fb_len = qs_data.base.length;
     unsigned long xmax = fb_len * 60 * 4;
-    unsigned long total = xmax * 2 + 1;
-    Xi = (mpz_t *)malloc(total * sizeof(mpz_t));
-    if (Xi == NULL) {
-        fprintf(stderr, "Error al asignar memoria para Xi\n");
-        exit(EXIT_FAILURE);
-    }
-    for (unsigned long i = 0; i < total; i++) {
-        mpz_init(Xi[i]);
-        long val = (long)i - (long)xmax;
-        mpz_set_si(Xi[i], val);
-    }
-    lengthXi = total;
-    double end_time = omp_get_wtime();
-    double segundosCriba = end_time-start_time;
-    printf("tiempo de cribado: %f segundos\n", segundosCriba); 
 
-    printf("Intervalo despues del cribado:%ld\n",lengthXi);
-    qs_data.intervalo.length_Xi = lengthXi;
-    //qs_data.intervalo.length_Qxi = lengthXi;
-    qs_data.intervalo.Xi = Xi;
-	
+    double end_time = omp_get_wtime();
+    double segundosCriba = end_time - start_time;
+    printf("xmax: %lu\n", xmax);
+    printf("tiempo de preparación de criba: %f segundos\n", segundosCriba);
+
 	printf("Calculando Polinomio...\n");
 	t_inicio = clock();
 	crearMatrizNula(&qs_data);
@@ -229,34 +214,54 @@ int main(int argc, char **argv)
 	long polinomio_count = 0;
 	long prev_n_BSuaves = qs_data.n_BSuaves;
 	while(res==1){
-		// MPQS: cada iteración genera un nuevo polinomio y evalúa Q(x)
-		// para todo el rango Xi.
+		// MPQS: generar nuevo polinomio
 		generate_mpqs_poly(&qs_data);
 
-		unsigned long npos = qs_data.intervalo.length_Xi;
+		// === CRIBA LOGARÍTMICA ===
+		// Pre-filtrar candidatos con criba logarítmica antes de trial division
+		long *sieve_candidates = NULL;
+		unsigned long n_candidates = 0;
+		sieve_mpqs(&qs_data, xmax, &sieve_candidates, &n_candidates);
 
-		// liberar Qxi previo si existe
+		if (n_candidates == 0) {
+			free(sieve_candidates);
+			polinomio_count++;
+			printf("Polinomio %ld procesado: 0 candidatos de criba\n", polinomio_count);
+			fflush(stdout);
+			continue;
+		}
+
+		// Construir Xi y Qxi solo para los candidatos de la criba
+		unsigned long npos = n_candidates;
+
+		// Liberar Xi y Qxi previos
+		if (qs_data.intervalo.Xi != NULL) {
+			for (unsigned long i = 0; i < qs_data.intervalo.length_Xi; i++)
+				mpz_clear(qs_data.intervalo.Xi[i]);
+			free(qs_data.intervalo.Xi);
+			qs_data.intervalo.Xi = NULL;
+		}
 		if (qs_data.intervalo.Qxi != NULL) {
-			unsigned long oldLen = qs_data.intervalo.length_Qxi;
-			for (unsigned long i = 0; i < oldLen; i++) {
+			for (unsigned long i = 0; i < qs_data.intervalo.length_Qxi; i++)
 				mpz_clear(qs_data.intervalo.Qxi[i]);
-			}
 			free(qs_data.intervalo.Qxi);
 			qs_data.intervalo.Qxi = NULL;
-			qs_data.intervalo.length_Qxi = 0;
 		}
 
-		// asignar nuevo array Qxi para rango completo
+		// Asignar nuevos arrays
+		qs_data.intervalo.Xi = (mpz_t *)malloc(npos * sizeof(mpz_t));
 		qs_data.intervalo.Qxi = (mpz_t *)malloc(npos * sizeof(mpz_t));
-		if (qs_data.intervalo.Qxi == NULL) {
-			fprintf(stderr, "Error al asignar memoria para Qxi\n");
-			exit(EXIT_FAILURE);
-		}
+		qs_data.intervalo.length_Xi = npos;
 		qs_data.intervalo.length_Qxi = npos;
+
 		for (unsigned long i = 0; i < npos; i++) {
+			mpz_init(qs_data.intervalo.Xi[i]);
+			mpz_set_si(qs_data.intervalo.Xi[i], sieve_candidates[i]);
 			mpz_init(qs_data.intervalo.Qxi[i]);
 			eval_mpqs_Qx(&qs_data, qs_data.intervalo.Xi[i], qs_data.intervalo.Qxi[i]);
 		}
+
+		free(sieve_candidates);
 
 		polinomio_count++;
 		if (qs_data.blocks.length > 0) {
@@ -265,8 +270,8 @@ int main(int argc, char **argv)
 			res = factoringTrial(&qs_data, npos, 0);
 		}
 		long found_this = qs_data.n_BSuaves - prev_n_BSuaves;
-		printf("Polinomio %ld procesado: encontrados %ld numeros B_suaves en este polinomio (total: %ld)\n",
-			polinomio_count, found_this, qs_data.n_BSuaves);
+		printf("Polinomio %ld: %lu candidatos criba → %ld B_suaves (total: %ld)\n",
+			polinomio_count, npos, found_this, qs_data.n_BSuaves);
 		fflush(stdout);
 		prev_n_BSuaves = qs_data.n_BSuaves;
 	}

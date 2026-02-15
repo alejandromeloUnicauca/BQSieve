@@ -64,7 +64,7 @@ def main():
     tiempof = tiempoBQS+tiempoSolM+tiempomcd
     print(f'Tiempo final:{tiempof}s')
 
-    #remove_temp_files()
+    remove_temp_files()
 
 
 def process_polynomial(num):
