@@ -105,7 +105,6 @@ int main(int argc, char **argv)
 	qs_data.intervalo.Qxi = NULL;
 	qs_data.intervalo.length_Xi = 0;
 	qs_data.intervalo.length_Qxi = 0;
-	qs_data.use_mpqs = 0;
 	// inicializar mpz_t del polinomio
 	mpz_init(qs_data.poly.a);
 	mpz_init(qs_data.poly.b);
@@ -171,9 +170,8 @@ int main(int argc, char **argv)
 	}
 	printf("Base de primos generada. %ld primos en la base\n",residuos);
 
-	//Intervalo del polinomio (cubo de la base de primos)
+	//Intervalo del polinomio (cuadrado de la base de primos)
 	getIntervalLength(qs_data.base.length, qs_data.intervalo.length);
-	gmp_printf("Intervalo del polinomio:%Zd\n", qs_data.intervalo.length);
 
 	double segundos = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;
 	printf("tiempo de creacion de la base:%fs\n",segundos);
@@ -190,14 +188,11 @@ int main(int argc, char **argv)
 		printf("tiempo de creacion de los bloques:%fs\n",segundos);	
 	}
 	
-	unsigned long lengthXi __attribute__((unused)) = 0;
-	
 	printf("Cribando...\n");
 	double start_time = omp_get_wtime();
 
-    // xmax define el rango de criba [-xmax..+xmax]
-    unsigned long fb_len = qs_data.base.length;
-    unsigned long xmax = fb_len * 60 * 4;
+    // xmax define el rango de criba [-xmax..+xmax], tomado del intervalo del polinomio
+    unsigned long xmax = mpz_get_ui(qs_data.intervalo.length);
 
     double end_time = omp_get_wtime();
     double segundosCriba = end_time - start_time;
@@ -226,8 +221,6 @@ int main(int argc, char **argv)
 		if (n_candidates == 0) {
 			free(sieve_candidates);
 			polinomio_count++;
-			printf("Polinomio %ld procesado: 0 candidatos de criba\n", polinomio_count);
-			fflush(stdout);
 			continue;
 		}
 
@@ -270,9 +263,11 @@ int main(int argc, char **argv)
 			res = factoringTrial(&qs_data, npos, 0);
 		}
 		long found_this = qs_data.n_BSuaves - prev_n_BSuaves;
-		printf("Polinomio %ld: %lu candidatos criba → %ld B_suaves (total: %ld)\n",
-			polinomio_count, npos, found_this, qs_data.n_BSuaves);
-		fflush(stdout);
+		if (found_this > 0) {
+			printf("Polinomio %ld: %lu candidatos criba → %ld B_suaves (total: %ld)\n",
+				polinomio_count, npos, found_this, qs_data.n_BSuaves);
+			fflush(stdout);
+		}
 		prev_n_BSuaves = qs_data.n_BSuaves;
 	}
 	printf("Polinomios procesados: %ld\n", polinomio_count);

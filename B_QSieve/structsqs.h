@@ -127,8 +127,6 @@ typedef struct{
 	mpqs_poly poly;
 	/**raíz roota persistente para generar sucesivos polinomios MPQS*/
 	mpz_t roota;
-	/**flag para usar MPQS*/
-	int use_mpqs;
 	/** tabla de parciales para 1LP */
 	partials_table partials;
 }qs_struct;
@@ -138,10 +136,5 @@ typedef struct{
 	int col;
 	int n_div;
 }data_divT;
-
-enum TypeSieving{
-	POSITIVE,
-	NEGATIVE
-};
 
 #endif // STRUCTSQS_H
