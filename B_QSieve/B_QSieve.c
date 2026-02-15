@@ -340,8 +340,11 @@ void imprimirMatriz(matrix matriz) {
 }
 
 void crearMatrizNula(qs_struct * qs_data){
-	qs_data->mat.n_rows = qs_data->base.length+1;
-	qs_data->mat.n_cols = qs_data->base.length;
+	// Necesitamos más filas (relaciones) que columnas para que el espacio nulo
+	// tenga dimensión suficiente. extra relaciones dan más soluciones independientes.
+	int extra = 64; // al menos 64 relaciones extra para tener ~64 soluciones
+	qs_data->mat.n_rows = qs_data->base.length + 1 + extra;
+	qs_data->mat.n_cols = qs_data->base.length + 1; // +1 para columna de signo (-1)
 	
 	//reservar memoria para matriz
 	qs_data->mat.data = (int**)malloc(qs_data->mat.n_rows*sizeof(int*));
@@ -498,6 +501,7 @@ void freeStruct(qs_struct * qs_data){
  */
 long generatePrimesBase(mpz_t n, long bound, prime * primes){
     long contRes = 0; // contador de residuos encontrados
+    long contPrimos = 0; // contador de primos leídos del archivo
 
     mpz_t p; // variable temporal para los primos del archivo
     mpz_init(p);
@@ -519,8 +523,7 @@ long generatePrimesBase(mpz_t n, long bound, prime * primes){
 
         if (mpz_set_str(p, ptr, 10) != 0) continue; // parse error
 
-        unsigned long p_ui = mpz_get_ui(p);
-        if ((long)p_ui > bound) break; // hemos pasado el límite
+        contPrimos++;
 
         // si n es residuo cuadratico mod p se agrega
         if ((mpz_legendre(n,p) == 1) || (mpz_cmp_ui(p,2) == 0)){
@@ -540,12 +543,17 @@ long generatePrimesBase(mpz_t n, long bound, prime * primes){
             mpfr_clear(pTemp);
 
             contRes++;
+
+            // parar cuando tengamos suficientes residuos cuadráticos
+            if (contRes >= bound) break;
         }
     }
 
     mpz_clear(p);
     fclose(file);
-    printf("Se usaron %ld primos\n",contRes);
+    gmp_printf("Primo mas grande en la base: %Zd\n", primes[contRes-1].value);
+    printf("Primos leidos del archivo: %ld, residuos cuadraticos: %ld de %ld requeridos\n",
+           contPrimos, contRes, bound);
     return contRes;
 }
 

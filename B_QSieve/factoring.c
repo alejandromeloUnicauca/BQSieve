@@ -57,7 +57,7 @@ void agregarAVectorBlock(qs_struct * qs_data, div_data_table * block_table){
 		if(periodo & 0){
 			for (long j = 0; j < qs_data->blocks.block[block].length; j++)
 			{
-				insertarNumero(&qs_data->mat,qs_data->n_BSuaves,j,0);
+				insertarNumero(&qs_data->mat,qs_data->n_BSuaves,j+1,0);
 			}
 		}else{
 			mpz_t p;
@@ -66,9 +66,9 @@ void agregarAVectorBlock(qs_struct * qs_data, div_data_table * block_table){
 			{
 				mpz_set(p,qs_data->blocks.block[block].factors[j].value);
 				if(mpz_divisible_p(gcd,p)){
-					insertarNumero(&qs_data->mat,qs_data->n_BSuaves,(block)*qs_data->blocks.block[0].length+j,periodo%2);
+					insertarNumero(&qs_data->mat,qs_data->n_BSuaves,(block)*qs_data->blocks.block[0].length+j+1,periodo%2);
 				}else{
-					insertarNumero(&qs_data->mat,qs_data->n_BSuaves,(block)*qs_data->blocks.block[0].length+j,0);
+					insertarNumero(&qs_data->mat,qs_data->n_BSuaves,(block)*qs_data->blocks.block[0].length+j+1,0);
 				}
 			}
 			mpz_clear(p);
@@ -152,6 +152,10 @@ int factoringBlocks(qs_struct * qs_data,  unsigned long endPos, unsigned long po
 	for (unsigned long i = 0; i < endPos; i++)
 	{
 		if(blockDivision(qs_data->intervalo.Qxi[i],qs_data)==1){
+			// Marcar columna 0 (signo) si Q(x) es negativo
+			if(mpz_sgn(qs_data->intervalo.Qxi[i]) < 0){
+				insertarNumero(&qs_data->mat, qs_data->n_BSuaves, 0, 1);
+			}
 			qs_data->n_BSuaves++;
 			// Escribir (a*x+b);Q(x);roota
 			mpz_t lhs;
@@ -166,7 +170,7 @@ int factoringBlocks(qs_struct * qs_data,  unsigned long endPos, unsigned long po
 			fprintf(fp, "\n");
 			fflush(fp);
 			mpz_clear(lhs);
-			if(qs_data->n_BSuaves==qs_data->base.length+1){
+			if(qs_data->n_BSuaves==qs_data->mat.n_rows){
 				fclose(fp);
 				return 0;
 			}
@@ -181,7 +185,7 @@ void agregarAVectorDiv(qs_struct * qs_data, data_divT * data_d){
 
 	for (long i = 0; i < qs_data->base.length ; i++)
 	{
-		insertarNumero(&qs_data->mat,qs_data->n_BSuaves,data_d[i].col,data_d[i].n_div%2);
+		insertarNumero(&qs_data->mat,qs_data->n_BSuaves,data_d[i].col+1,data_d[i].n_div%2);
 	}
 }
 
@@ -274,8 +278,12 @@ int factoringTrial(qs_struct * qs_data, unsigned long endPos, unsigned long posX
 	for (unsigned long i = 0; i < endPos; i++)
 	{
 		if(trialDivision(qs_data->intervalo.Qxi[i],qs_data)==1){
+			// Marcar columna 0 (signo) si Q(x) es negativo
+			if(mpz_sgn(qs_data->intervalo.Qxi[i]) < 0){
+				insertarNumero(&qs_data->mat, qs_data->n_BSuaves, 0, 1);
+			}
 			qs_data->n_BSuaves++;
-			if(qs_data->n_BSuaves==qs_data->base.length+1){
+			if(qs_data->n_BSuaves==qs_data->mat.n_rows){
 				fclose(fp);
 				return 0;
 			}

@@ -46,8 +46,20 @@ def main():
                     "matrix="+PATH_TMP+"/"+MATRIX_BIN, "wdir="+PATH_TMP, "interleaving=0"],
                     stdout=open("outputbwc.txt", "w"))
 
-    subprocess.run(["cp", PATH_TMP+"/K.sols0-64.0.txt", "./"])
-    hex_to_binary("K.sols0-64.0.txt", "vec.txt")
+    # CADO-NFS genera K.sols0-64.X.txt solo para el vector que es
+    # nullspace válido (X puede ser 0 o 1). Buscar cuál existe.
+    ksol_file = None
+    for candidate in sorted(os.listdir(PATH_TMP)):
+        if candidate.startswith("K.sols") and candidate.endswith(".txt"):
+            ksol_file = candidate
+            break
+    if ksol_file is None:
+        print("Error: no se encontró archivo K.sols*.txt en", PATH_TMP)
+        remove_temp_files()
+        sys.exit(1)
+    print(f"Archivo de solución: {ksol_file}")
+    subprocess.run(["cp", PATH_TMP + "/" + ksol_file, "./K.sols.txt"])
+    hex_to_binary("K.sols.txt", "vec.txt")
     finCado = time.time()
     tiempoSolM = finCado-inicioCado
     print(f'\nSolucion Matriz:{tiempoSolM}s')
@@ -93,6 +105,9 @@ def process_polynomial(num):
                         with open("roota_list.txt", "a") as rl:
                             rl.write(rel_roota + "\n")
 
+        if not os.path.exists("salida.txt"):
+            continue
+
         mulpoli_args = ["./mulPoli", str(num)]
         exit_status = subprocess.run(mulpoli_args, stdout=open("salidap.txt", "a")).returncode
         if exit_status == 0:
@@ -120,7 +135,7 @@ def hex_to_binary(file_path, output_file):
                 out.write(bin_num_padded + "\n")
 
 def remove_temp_files():
-    files_to_remove = [MATRIX_BIN, MATRIX_RW_BIN, MATRIX_CW_BIN, "matrix.txt", "residuos.txt", "outputbwc.txt", "K.sols0-64.0.txt", "salidap.txt", "vec.txt", "pos.txt", "salida.txt", "polinomio.txt", "roota.txt", "roota_list.txt"]
+    files_to_remove = [MATRIX_BIN, MATRIX_RW_BIN, MATRIX_CW_BIN, "matrix.txt", "residuos.txt", "outputbwc.txt", "K.sols.txt", "salidap.txt", "vec.txt", "pos.txt", "salida.txt", "polinomio.txt", "roota.txt", "roota_list.txt"]
     [os.remove(file) for file in files_to_remove if os.path.exists(file)]
     if(os.path.exists(PATH_TMP)):
         shutil.rmtree(PATH_TMP)
