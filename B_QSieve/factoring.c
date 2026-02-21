@@ -7,6 +7,24 @@
 
 /* Forward declarations */
 int trialDivision(mpz_t Qxi, qs_struct * qs_data, mpz_t Xi);
+void insertarNumero(matrix * matriz, int posFila, int posColumna, int valor);
+
+/**
+ * @brief Añade los factores de 'a' al vector de exponentes en la matriz.
+ *
+ * En SIQS, a = q_0 * q_1 * ... * q_{s-1} donde cada q_j está en la base.
+ * La relación es lhs² ≡ a*Q(x) (mod N), y el vector de exponentes de Q(x)
+ * ya está en la matriz. Necesitamos sumar exponente 1 por cada factor de a.
+ * factor_fb_idx[j] da el índice en la base → columna = idx+1 en la matriz.
+ */
+void add_a_factors_to_matrix(qs_struct *qs_data) {
+    siqs_poly_state *st = &qs_data->siqs_state;
+    for (unsigned int j = 0; j < st->num_factors; j++) {
+        unsigned long fb_idx = st->factor_fb_idx[j];
+        /* columna = fb_idx + 1 (columna 0 es signo) */
+        insertarNumero(&qs_data->mat, qs_data->n_BSuaves, (int)fb_idx + 1, 1);
+    }
+}
 
 void insertarNumero(matrix * matriz, int posFila, int posColumna, int valor){
 
@@ -140,6 +158,11 @@ int blockDivision(mpz_t Qxi, qs_struct * qs_data){
 /**
  * @brief Factoriza el array Qxi con bloques. Cuando blockDivision falla,
  * intenta trialDivision como fallback para capturar large primes.
+ *
+ * En SIQS, la relación es (a*x+b)² ≡ a*Q(x) (mod N).
+ * Guardamos en polinomio.txt: lhs=a*x+b, Qfile=a*Q(x), roota=1
+ * Y añadimos los factores de 'a' al vector de exponentes.
+ *
  * @param qs_data estructura que contiene el array Qxi
  * @param endPos cantidad de candidatos
  * @param posXi índice inicial
@@ -160,19 +183,24 @@ int factoringBlocks(qs_struct * qs_data,  unsigned long endPos, unsigned long po
 			if(mpz_sgn(qs_data->intervalo.Qxi[i]) < 0){
 				insertarNumero(&qs_data->mat, qs_data->n_BSuaves, 0, 1);
 			}
+			/* Añadir factores de 'a' al vector de exponentes (SIQS) */
+			add_a_factors_to_matrix(qs_data);
 			qs_data->n_BSuaves++;
-			mpz_t lhs;
-			mpz_init(lhs);
+			mpz_t lhs, Qfile;
+			mpz_inits(lhs, Qfile, NULL);
 			mpz_mul(lhs, qs_data->poly.a, qs_data->intervalo.Xi[posXi]);
 			mpz_add(lhs, lhs, qs_data->poly.b);
+			/* Qfile = a * Q(x) = lhs² - N */
+			mpz_mul(Qfile, lhs, lhs);
+			mpz_sub(Qfile, Qfile, qs_data->n);
 			mpz_out_str(fp, 10, lhs);
 			fprintf(fp, ";");
-			mpz_out_str(fp, 10, qs_data->intervalo.Qxi[i]);
+			mpz_out_str(fp, 10, Qfile);
 			fprintf(fp, ";");
 			mpz_out_str(fp, 10, qs_data->roota);
 			fprintf(fp, "\n");
 			fflush(fp);
-			mpz_clear(lhs);
+			mpz_clears(lhs, Qfile, NULL);
 			if(qs_data->n_BSuaves==qs_data->mat.n_rows){
 				fclose(fp);
 				return 0;
@@ -181,20 +209,22 @@ int factoringBlocks(qs_struct * qs_data,  unsigned long endPos, unsigned long po
 			/* blockDivision falló: intentar trialDivision para capturar 1LP */
 			int result = trialDivision(qs_data->intervalo.Qxi[i], qs_data, qs_data->intervalo.Xi[posXi]);
 			if(result == 1){
-				/* Full relation via trial (raro aquí, pero posible) */
+				/* Full relation via trial */
 				qs_data->n_BSuaves++;
-				mpz_t lhs;
-				mpz_init(lhs);
+				mpz_t lhs, Qfile;
+				mpz_inits(lhs, Qfile, NULL);
 				mpz_mul(lhs, qs_data->poly.a, qs_data->intervalo.Xi[posXi]);
 				mpz_add(lhs, lhs, qs_data->poly.b);
+				mpz_mul(Qfile, lhs, lhs);
+				mpz_sub(Qfile, Qfile, qs_data->n);
 				mpz_out_str(fp, 10, lhs);
 				fprintf(fp, ";");
-				mpz_out_str(fp, 10, qs_data->intervalo.Qxi[i]);
+				mpz_out_str(fp, 10, Qfile);
 				fprintf(fp, ";");
 				mpz_out_str(fp, 10, qs_data->roota);
 				fprintf(fp, "\n");
 				fflush(fp);
-				mpz_clear(lhs);
+				mpz_clears(lhs, Qfile, NULL);
 				if(qs_data->n_BSuaves==qs_data->mat.n_rows){
 					fclose(fp);
 					return 0;
@@ -268,6 +298,8 @@ int trialDivision(mpz_t Qxi, qs_struct * qs_data, mpz_t Xi){
 			insertarNumero(&qs_data->mat, qs_data->n_BSuaves, 0, 1);
 		for (long i = 0; i < qs_data->base.length; i++)
 			insertarNumero(&qs_data->mat, qs_data->n_BSuaves, i+1, exp_vec[i] % 2);
+		/* Añadir factores de 'a' (SIQS: la relación incluye factor a) */
+		add_a_factors_to_matrix(qs_data);
 		mpz_clear(QxiTemp);
 		free(exp_vec);
 		return 1;
@@ -296,6 +328,11 @@ int trialDivision(mpz_t Qxi, qs_struct * qs_data, mpz_t Xi){
 			 * entonces Q1*Q2 = (-1)^(s1+s2) * prod(pi^(ei+fi)) * LP²
 			 * El vector de exponentes mod 2 es XOR (suma mod 2) de ambos vectores.
 			 * LP² es par, así que LP desaparece de la paridad.
+			 *
+			 * SIQS: la relación es lhs² ≡ a*Q(x) (mod N).
+			 * Para la combinada: lhs1²*lhs2² ≡ a1*Q1*a2*Q2 (mod N)
+			 * => (lhs1*lhs2)² ≡ a1*a2*Q1*Q2 (mod N)
+			 * Los factores de a1 y a2 se añaden al vector de exponentes.
 			 */
 			partial_entry *match = &qs_data->partials.entries[match_idx];
 			
@@ -307,35 +344,51 @@ int trialDivision(mpz_t Qxi, qs_struct * qs_data, mpz_t Xi){
 				int combined_exp = (exp_vec[i] + match->exponents[i]) % 2;
 				insertarNumero(&qs_data->mat, qs_data->n_BSuaves, i+1, combined_exp);
 			}
+			/* Añadir factores de a del candidato actual */
+			add_a_factors_to_matrix(qs_data);
+			/* Añadir factores de a de la parcial guardada */
+			for (unsigned int j = 0; j < match->num_a_factors; j++) {
+				insertarNumero(&qs_data->mat, qs_data->n_BSuaves, (int)match->a_factor_fb_idx[j] + 1, 1);
+			}
 			
 			/* Escribir relación combinada en polinomio.txt:
-			 * lhs = lhs1 * lhs2 (mod N), Qx = Q1 * Q2
-			 * Necesitamos guardar ambos lhs y ambos Q para la raíz cuadrada.
-			 * Formato: lhs1*lhs2;Q1*Q2;roota1,roota2
-			 * mulPoli multiplicará todos los Q's y todos los lhs's.
+			 * lhs = lhs1 * lhs2
+			 * Qfile = a1*Q1 * a2*Q2 = (lhs1²-N) * (lhs2²-N) / ... no, eso no es correcto.
+			 * Más simple: Qfile = a1*Q1 * a2*Q2 donde a_i*Q_i = lhs_i² - N
+			 * Pero mulPoli calcula prod(Q_i) y necesita prod(roota_i² * Q_i) = cuadrado.
+			 * Con roota=1: necesitamos prod(Qfile_i) = cuadrado perfecto.
+			 * Qfile_combined = a1*Q1 * a2*Q2 (sin dividir por LP²; LP² tiene exponente par)
+			 * Los factores de a1 y a2 están en el vector => la paridad cuadra.
 			 */
 			FILE *fp = fopen("polinomio.txt", "a");
 			if(fp){
-				/* lhs combinado = lhs1 * lhs2 */
 				mpz_t combined_lhs, combined_Q;
 				mpz_inits(combined_lhs, combined_Q, NULL);
 				
-				/* lhs del candidato actual */
 				mpz_t my_lhs;
 				mpz_init(my_lhs);
 				mpz_mul(my_lhs, qs_data->poly.a, Xi);
 				mpz_add(my_lhs, my_lhs, qs_data->poly.b);
 				
-				/* lhs combinado */
 				mpz_mul(combined_lhs, my_lhs, match->lhs);
 				
-				/* Q combinado = Q1 * Q2 (NO dividimos por LP²;
-				 * LP² tiene exponente par y no afecta la paridad
-				 * en la matriz. mulPoli lo incluirá en el producto
-				 * y será un cuadrado perfecto junto con lhs1*lhs2) */
-				mpz_mul(combined_Q, Qxi, match->Qx);
+				/* Q combinado = a1*Q1 * a2*Q2 = (lhs1²-N)*(lhs2²-N)/N... no.
+				 * a_current*Qxi = my_lhs² - N
+				 * a_match*Qx_match = match->lhs² - N
+				 * Qfile_combined = (my_lhs²-N) * (match->lhs²-N)... no, eso cuadra pero
+				 * los signos y LP no funcionan bien.
+				 *
+				 * Correcto: Qfile = a_cur*Q_cur * a_match*Q_match
+				 *   a_cur*Q_cur = a_cur * Qxi
+				 *   a_match*Q_match = match->a_value * match->Qx
+				 * Producto sin dividir por LP² (LP² tiene exponente par):
+				 */
+				mpz_t aQ1, aQ2;
+				mpz_inits(aQ1, aQ2, NULL);
+				mpz_mul(aQ1, qs_data->poly.a, Qxi);
+				mpz_mul(aQ2, match->a_value, match->Qx);
+				mpz_mul(combined_Q, aQ1, aQ2);
 				
-				/* Escribir: lhs_combinado;Q_combinado;roota_actual,roota_match */
 				mpz_out_str(fp, 10, combined_lhs);
 				fprintf(fp, ";");
 				mpz_out_str(fp, 10, combined_Q);
@@ -347,12 +400,12 @@ int trialDivision(mpz_t Qxi, qs_struct * qs_data, mpz_t Xi){
 				fflush(fp);
 				fclose(fp);
 				
-				mpz_clears(combined_lhs, combined_Q, my_lhs, NULL);
+				mpz_clears(combined_lhs, combined_Q, my_lhs, aQ1, aQ2, NULL);
 			}
 			
 			/* Eliminar la parcial usada (swap con última) */
 			free(match->exponents);
-			mpz_clears(match->lhs, match->Qx, match->roota, NULL);
+			mpz_clears(match->lhs, match->Qx, match->roota, match->a_value, NULL);
 			unsigned long last = qs_data->partials.n - 1;
 			if((unsigned long)match_idx != last)
 				qs_data->partials.entries[match_idx] = qs_data->partials.entries[last];
@@ -378,6 +431,11 @@ int trialDivision(mpz_t Qxi, qs_struct * qs_data, mpz_t Xi){
 			mpz_add(e->lhs, e->lhs, qs_data->poly.b);
 			mpz_init_set(e->Qx, Qxi);
 			mpz_init_set(e->roota, qs_data->roota);
+			/* Guardar factores de a para cuando se combine */
+			e->num_a_factors = qs_data->siqs_state.num_factors;
+			for (unsigned int j = 0; j < e->num_a_factors; j++)
+				e->a_factor_fb_idx[j] = qs_data->siqs_state.factor_fb_idx[j];
+			mpz_init_set(e->a_value, qs_data->poly.a);
 			
 			mpz_clear(QxiTemp);
 			/* NO free exp_vec, se transfirió a la parcial */
@@ -410,19 +468,22 @@ int factoringTrial(qs_struct * qs_data, unsigned long endPos, unsigned long posX
 		if(result == 1){
 			/* Full relation encontrada — vector ya insertado por trialDivision */
 			qs_data->n_BSuaves++;
-			/* Escribir (a*x+b);Q(x);roota */
-			mpz_t lhs;
-			mpz_init(lhs);
+			/* Escribir lhs;a*Q(x);roota */
+			mpz_t lhs, Qfile;
+			mpz_inits(lhs, Qfile, NULL);
 			mpz_mul(lhs, qs_data->poly.a, qs_data->intervalo.Xi[posXi]);
 			mpz_add(lhs, lhs, qs_data->poly.b);
+			/* Qfile = a * Q(x) = lhs² - N */
+			mpz_mul(Qfile, lhs, lhs);
+			mpz_sub(Qfile, Qfile, qs_data->n);
 			mpz_out_str(fp, 10, lhs);
 			fprintf(fp, ";");
-			mpz_out_str(fp, 10, qs_data->intervalo.Qxi[i]);
+			mpz_out_str(fp, 10, Qfile);
 			fprintf(fp, ";");
 			mpz_out_str(fp, 10, qs_data->roota);
 			fprintf(fp, "\n");
 			fflush(fp);
-			mpz_clear(lhs);
+			mpz_clears(lhs, Qfile, NULL);
 			if(qs_data->n_BSuaves==qs_data->mat.n_rows){
 				fclose(fp);
 				return 0;

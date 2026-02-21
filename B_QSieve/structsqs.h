@@ -95,6 +95,29 @@ typedef struct{
     mpz_t c;
 } mpqs_poly;
 
+/**
+ * @brief Máximo número de factores primos que componen 'a' en SIQS.
+ */
+#define MAX_SIQS_FACTORS 20
+
+/**
+ * @brief Estado del generador de polinomios SIQS.
+ *
+ * Para un a = q_0 * q_1 * ... * q_{s-1}, se generan 2^(s-1) valores
+ * de b usando código Gray. Cada b se obtiene sumando/restando 2*B_j
+ * al b anterior.
+ */
+typedef struct {
+    int initialized;               /* 0 = necesita nuevo 'a', 1 = iterando sobre b's */
+    unsigned int num_factors;      /* s = número de factores de 'a' */
+    unsigned long factor_fb_idx[MAX_SIQS_FACTORS]; /* índices en la base de primos */
+    mpz_t factors[MAX_SIQS_FACTORS];   /* los primos q_j que componen a */
+    mpz_t Bvals[MAX_SIQS_FACTORS];     /* valores auxiliares B_j */
+    unsigned long poly_index;      /* índice actual del polinomio derivado (0..2^(s-1)-1) */
+    unsigned long num_derived;     /* 2^(s-1) = total de polinomios por este a */
+    mpz_t target_a;                /* valor óptimo de a = sqrt(2N)/sieve_size */
+} siqs_poly_state;
+
 typedef struct{
     unsigned long large_prime; // primo grande (residuo tras trial division)
     mpz_t lhs;                // valor a*x+b asociado a esta relación
@@ -102,6 +125,9 @@ typedef struct{
     mpz_t roota;              // roota del polinomio que generó esta relación
     int *exponents;           // vector de exponentes (tamaño = base.length), sin signo
     int sign;                 // 1 si Q(x) < 0, 0 si Q(x) >= 0
+    unsigned int num_a_factors;                  // número de factores de a (SIQS)
+    unsigned long a_factor_fb_idx[MAX_SIQS_FACTORS]; // índices en la base de los factores de a
+    mpz_t a_value;            // valor de 'a' para esta relación
 } partial_entry;
 
 typedef struct{
@@ -139,8 +165,10 @@ typedef struct{
 	interval intervalo;
 	/**polinomio MPQS actual (opcional)*/
 	mpqs_poly poly;
-	/**raíz roota persistente para generar sucesivos polinomios MPQS*/
+	/**raíz roota persistente para generar sucesivos polinomios MPQS (legacy, pre-SIQS)*/
 	mpz_t roota;
+	/** estado del generador SIQS (múltiples b por cada a) */
+	siqs_poly_state siqs_state;
 	/** tabla de parciales para 1LP */
 	partials_table partials;
 	/** límite para large primes: large_mult * primo_más_grande_de_la_base */

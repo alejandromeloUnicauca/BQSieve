@@ -60,6 +60,8 @@ int main(int argc, char **argv)
 	// inicializar roota persistente para MPQS (0 indica no inicializado)
 	mpz_init(qs_data.roota);
 	mpz_set_ui(qs_data.roota, 0);
+	// inicializar estado SIQS
+	memset(&qs_data.siqs_state, 0, sizeof(siqs_poly_state));
 	// inicializar tabla de parciales
 	qs_data.partials.entries = NULL;
 	qs_data.partials.n = 0;
@@ -435,6 +437,7 @@ void freeStruct(qs_struct * qs_data){
 		mpz_clear(qs_data->partials.entries[i].lhs);
 		mpz_clear(qs_data->partials.entries[i].Qx);
 		mpz_clear(qs_data->partials.entries[i].roota);
+		mpz_clear(qs_data->partials.entries[i].a_value);
 		free(qs_data->partials.entries[i].exponents);
 	}
 	free(qs_data->partials.entries);
@@ -444,6 +447,15 @@ void freeStruct(qs_struct * qs_data){
 	mpz_clear(qs_data->poly.a);
 	mpz_clear(qs_data->poly.b);
 	mpz_clear(qs_data->poly.c);
+
+	// liberar estado SIQS si fue inicializado
+	if (qs_data->siqs_state.initialized) {
+		for (unsigned int i = 0; i < MAX_SIQS_FACTORS; i++) {
+			mpz_clear(qs_data->siqs_state.factors[i]);
+			mpz_clear(qs_data->siqs_state.Bvals[i]);
+		}
+		mpz_clear(qs_data->siqs_state.target_a);
+	}
 
 	
 	//liberar memoria de la matriz
