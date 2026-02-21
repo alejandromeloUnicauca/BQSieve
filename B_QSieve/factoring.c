@@ -119,16 +119,19 @@ int blockDivision(mpz_t Qxi, qs_struct * qs_data){
 	if(mpz_cmp_ui(QxiTemp,1)==0){
 		agregarAVectorBlock(qs_data, &block_table);
 		mpz_clears(QxiTemp,gcd,gcdAnt,NULL);
-		//Todo Liberar memoria de data->gcd
-		if(block_table.data!=NULL){
-			free(block_table.data);
+		// Liberar memoria de data->gcd
+		for (unsigned long k = 0; k < cont; k++){
+			mpz_clear(block_table.data[k].gcd);
 		}
+		free(block_table.data);
 		return 1;
 	}else{
-		if(block_table.data!=NULL){
-			free(block_table.data);
-		}
 		mpz_clears(QxiTemp,gcd,gcdAnt,NULL);
+		// Liberar memoria de data->gcd
+		for (unsigned long k = 0; k < cont; k++){
+			mpz_clear(block_table.data[k].gcd);
+		}
+		free(block_table.data);
 		return 0;
 	}
 }

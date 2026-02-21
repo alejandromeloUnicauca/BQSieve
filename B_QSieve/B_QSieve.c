@@ -21,6 +21,7 @@ void getPrimesBaseLength(mpz_t n, long * result);
 void getIntervalLength(long base_length, mpz_t result);
 long generatePrimesBase(mpz_t n, long bound, prime * primes);
 void freeStruct(qs_struct * qs_data);
+void parseArgs(int argc, char **argv, int *flagd, int *flagh, char **hdvalue, char **bvalue, char **cvalue);
 void usage();
 
 //Cantidad de cores que se quieren usar para el cribado, 1 por defecto
@@ -33,60 +34,8 @@ int main(int argc, char **argv)
 	char *hdvalue = NULL;
 	char *bvalue = NULL;
 	char *cvalue = NULL;
-	int c;
 	
-	opterr = 0;
-	
-	while ((c = getopt(argc, argv, "d:h:b:c:")) != -1){
-		switch(c){
-			case 'd':
-				if(flagh == 1){
-					fprintf (stderr, "Solo puedes usar -h o -d pero no ambos\n");
-					usage();
-					exit(EXIT_FAILURE);
-				}
-				flagd = 1;
-				hdvalue = optarg;
-				break;
-			case 'h':
-				if(flagd == 1){
-					fprintf (stderr, "Solo puedes usar -h o -d pero no ambos\n");
-					usage();
-					exit(EXIT_FAILURE);
-				}
-				flagh = 1;
-				hdvalue = optarg;
-				break;
-			case 'b':
-				bvalue = optarg;
-				break;
-			case 'c':
-				cvalue = optarg;
-				break;
-			case '?':
-				if (strchr("h", optopt) != NULL)
-					fprintf (stderr, "La opción -%c requiere un argumento.\n", optopt);
-				else if (strchr("d", optopt) != NULL)
-					fprintf (stderr, "La opción -%c requiere un argumento.\n", optopt);
-				else if (strchr("b", optopt) != NULL)
-					fprintf (stderr, "La opción -%c requiere un argumento.\n", optopt);
-				else if (strchr("c", optopt) != NULL)
-					fprintf (stderr, "La opción -%c requiere un argumento.\n", optopt);
-				else if (isprint (optopt))
-					fprintf(stderr, "Opción desconocida'-%c'.\n", optopt);
-				else
-					fprintf(stderr, "Carácter no válido '\\x%x'.\n", optopt);
-				usage();
-				exit(EXIT_FAILURE);
-				
-				break;
-		}
-	}
-	
-	if(argc < 2){
-		usage();
-		exit(EXIT_FAILURE);
-	}
+	parseArgs(argc, argv, &flagd, &flagh, &hdvalue, &bvalue, &cvalue);
 	
 	//Declaracion de variables
 	qs_struct qs_data;
@@ -564,22 +513,28 @@ long generatePrimesBase(mpz_t n, long bound, prime * primes){
  * @param result: variable en la que se devuelve el valor calculado
  */
 void getPrimesBaseLength(mpz_t n, long * result){
-	// Usar heurística similar al script Python para obtener una base más grande:
-	// bound = int(5 * (log10(n))^2)
-	mpfr_t ln, log10n, tmp;
-	mpfr_inits(ln, log10n, tmp, NULL);
-	mpfr_set_z(ln, n, MPFR_RNDN);
-	// ln = log(n)
-	mpfr_log(ln, ln, MPFR_RNDZ);
-	// log10(n) = ln(n) / ln(10)
-	mpfr_set_str(tmp, "2.302585092994046", 10, MPFR_RNDZ); // ln(10)
-	mpfr_div(log10n, ln, tmp, MPFR_RNDZ);
-	// tmp = 5 * (log10(n))^2
-	mpfr_mul(tmp, log10n, log10n, MPFR_RNDZ);
-	mpfr_mul_ui(tmp, tmp, 5, MPFR_RNDZ);
-	// devolver como long
-	*result = (long) mpfr_get_ui(tmp, MPFR_RNDZ);
-	mpfr_clears(ln, log10n, tmp, NULL);
+	//formuala: result = ((e^sqrt(ln(n)*ln(ln(n))))^(sqrt(2)/4))
+	
+	//Declaracion de variables
+	mpfr_t num, ln1, ln2, e, pow;
+	
+	//inicializacion de variables
+	mpfr_inits(ln1,ln2,e,pow,NULL);
+	mpfr_init2(num,mpz_sizeinbase(n,2));
+	mpfr_set_z(num,n,MPFR_RNDN);
+
+	mpfr_set_str(e, "2.71828182845904523536", 10, MPFR_RNDZ);//define euler
+	mpfr_set_str(pow, "0.3535533905932738", 10, MPFR_RNDZ);//define sqrt(2)/4
+	mpfr_log(ln1, num, MPFR_RNDZ);//ln1= log(num)
+	mpfr_log(ln2, ln1,MPFR_RNDZ);//ln2=log(ln1)
+	mpfr_mul(num, ln1, ln2, MPFR_RNDZ);//num=ln1*ln2
+	mpfr_sqrt(num, num, MPFR_RNDZ);//sqrt(num)
+	mpfr_pow (num, e, num, MPFR_RNDZ);//num=e^n
+	mpfr_pow (num, num, pow, MPFR_RNDZ);//num=num^pow
+	//mpfr_get_z(result, num, MPFR_RNDZ);//se le asigna a result la parte entera de num
+	
+	*result = mpfr_get_ui(num,MPFR_RNDZ);
+	mpfr_clears(num,ln1,ln2,e,pow,NULL);
 }
 
 /**
@@ -591,6 +546,62 @@ void getPrimesBaseLength(mpz_t n, long * result){
 void getIntervalLength(long base_length, mpz_t result){
 	mpz_set_si(result, base_length);
 	mpz_pow_ui(result, result, 2);
+}
+
+void parseArgs(int argc, char **argv, int *flagd, int *flagh, char **hdvalue, char **bvalue, char **cvalue){
+	int c;
+	opterr = 0;
+	
+	while ((c = getopt(argc, argv, "d:h:b:c:")) != -1){
+		switch(c){
+			case 'd':
+				if(*flagh == 1){
+					fprintf (stderr, "Solo puedes usar -h o -d pero no ambos\n");
+					usage();
+					exit(EXIT_FAILURE);
+				}
+				*flagd = 1;
+				*hdvalue = optarg;
+				break;
+			case 'h':
+				if(*flagd == 1){
+					fprintf (stderr, "Solo puedes usar -h o -d pero no ambos\n");
+					usage();
+					exit(EXIT_FAILURE);
+				}
+				*flagh = 1;
+				*hdvalue = optarg;
+				break;
+			case 'b':
+				*bvalue = optarg;
+				break;
+			case 'c':
+				*cvalue = optarg;
+				break;
+			case '?':
+				if (strchr("h", optopt) != NULL)
+					fprintf (stderr, "La opción -%c requiere un argumento.\n", optopt);
+				else if (strchr("d", optopt) != NULL)
+					fprintf (stderr, "La opción -%c requiere un argumento.\n", optopt);
+				else if (strchr("b", optopt) != NULL)
+					fprintf (stderr, "La opción -%c requiere un argumento.\n", optopt);
+				else if (strchr("c", optopt) != NULL)
+					fprintf (stderr, "La opción -%c requiere un argumento.\n", optopt);
+				else if (isprint (optopt))
+					fprintf(stderr, "Opción desconocida'-%c'.\n", optopt);
+				else
+					fprintf(stderr, "Carácter no válido '\\x%x'.\n", optopt);
+				usage();
+				exit(EXIT_FAILURE);
+				
+				break;
+		}
+	}
+	
+	if(argc < 2){
+		usage();
+		exit(EXIT_FAILURE);
+	}
 }
 
 void usage(){
