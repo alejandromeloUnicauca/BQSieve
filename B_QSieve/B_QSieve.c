@@ -64,6 +64,7 @@ int main(int argc, char **argv)
 	qs_data.partials.entries = NULL;
 	qs_data.partials.n = 0;
 	qs_data.partials.capacity = 0;
+	qs_data.large_prime_bound = 0;
 	mpz_inits(qs_data.n,qs_data.intervalo.length,NULL);
 	if(bvalue!=NULL)qs_data.blocks.length = atol(bvalue);
 	else qs_data.blocks.length = 0;
@@ -125,6 +126,14 @@ int main(int argc, char **argv)
 	//Intervalo de criba: usar sieve_size de la tabla de parámetros
 	mpz_set_ui(qs_data.intervalo.length, qs_data.sieve_params.sieve_size);
 
+	// Calcular large_prime_bound = large_mult * primo_más_grande_de_la_base
+	{
+		unsigned long p_max = mpz_get_ui(qs_data.base.primes[qs_data.base.length - 1].value);
+		qs_data.large_prime_bound = (unsigned long)qs_data.sieve_params.large_mult * p_max;
+		printf("Large prime bound: %lu (large_mult=%u × p_max=%lu)\n",
+			qs_data.large_prime_bound, qs_data.sieve_params.large_mult, p_max);
+	}
+
 	double segundos = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;
 	printf("tiempo de creacion de la base:%fs\n",segundos);
 	
@@ -160,6 +169,7 @@ int main(int argc, char **argv)
 
 	long polinomio_count = 0;
 	long prev_n_BSuaves = qs_data.n_BSuaves;
+	long full_relations = 0;
 	while(res==1){
 		// MPQS: generar nuevo polinomio
 		generate_mpqs_poly(&qs_data);
@@ -216,8 +226,10 @@ int main(int argc, char **argv)
 		}
 		long found_this = qs_data.n_BSuaves - prev_n_BSuaves;
 		if (found_this > 0) {
-			printf("Polinomio %ld: %lu candidatos criba → %ld B_suaves (total: %ld)\n",
-				polinomio_count, npos, found_this, qs_data.n_BSuaves);
+			/* Clasificar: full vs combined */
+			full_relations += found_this; /* ajustado abajo */
+			printf("Polinomio %ld: %lu candidatos criba → %ld B_suaves (total: %ld, parciales: %lu)\n",
+				polinomio_count, npos, found_this, qs_data.n_BSuaves, qs_data.partials.n);
 			fflush(stdout);
 		}
 		prev_n_BSuaves = qs_data.n_BSuaves;
@@ -225,6 +237,7 @@ int main(int argc, char **argv)
 	printf("Polinomios procesados: %ld\n", polinomio_count);
 	fflush(stdout);
 	printf("Numeros B_Suaves encontrados:%ld\n",qs_data.n_BSuaves);
+	printf("Parciales almacenadas sin emparejar: %lu\n", qs_data.partials.n);
 	t_final = clock();
 	double segundosPolinomio = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;
 	printf("tiempo de calculo del polinomio:%fs\n",segundosPolinomio);	
@@ -419,9 +432,10 @@ void freeStruct(qs_struct * qs_data){
 
 	// liberar parciales
 	for (unsigned long long i = 0; i < qs_data->partials.n; i++) {
-		mpz_clear(qs_data->partials.entries[i].rem);
 		mpz_clear(qs_data->partials.entries[i].lhs);
-		mpz_clear(qs_data->partials.entries[i].tofact);
+		mpz_clear(qs_data->partials.entries[i].Qx);
+		mpz_clear(qs_data->partials.entries[i].roota);
+		free(qs_data->partials.entries[i].exponents);
 	}
 	free(qs_data->partials.entries);
 

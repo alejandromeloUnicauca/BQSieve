@@ -197,8 +197,18 @@ void sieve_mpqs(qs_struct *qs_data, unsigned long xmax,
         mpfr_set_z(T_thr, maxQ, MPFR_RNDN);
         mpfr_sqrt(T_thr, T_thr, MPFR_RNDZ);
         mpfr_log(T_thr, T_thr, MPFR_RNDZ);
-        // restar log del primo más grande de la base como margen
-        mpfr_sub(T_thr, T_thr, qs_data->base.primes[qs_data->base.length - 1].log_value, MPFR_RNDZ);
+        // restar log del large_prime_bound como margen para aceptar 1LP
+        // Si large_prime_bound > 0, usar log(large_prime_bound), sino log(p_max)
+        if (qs_data->large_prime_bound > 1) {
+            mpfr_t lp_log;
+            mpfr_init2(lp_log, 128);
+            mpfr_set_ui(lp_log, qs_data->large_prime_bound, MPFR_RNDN);
+            mpfr_log(lp_log, lp_log, MPFR_RNDZ);
+            mpfr_sub(T_thr, T_thr, lp_log, MPFR_RNDZ);
+            mpfr_clear(lp_log);
+        } else {
+            mpfr_sub(T_thr, T_thr, qs_data->base.primes[qs_data->base.length - 1].log_value, MPFR_RNDZ);
+        }
 
         mpz_clears(maxQ, tmp, NULL);
     }

@@ -96,9 +96,12 @@ typedef struct{
 } mpqs_poly;
 
 typedef struct{
-    mpz_t rem;    // resto grande (possible large prime)
-    mpz_t lhs;    // valor a*x+b asociado
-    mpz_t tofact; // valor 'nf' (a*x*x + 2*b*x + c) o equivalente
+    unsigned long large_prime; // primo grande (residuo tras trial division)
+    mpz_t lhs;                // valor a*x+b asociado a esta relación
+    mpz_t Qx;                 // valor Q(x) original (con signo)
+    mpz_t roota;              // roota del polinomio que generó esta relación
+    int *exponents;           // vector de exponentes (tamaño = base.length), sin signo
+    int sign;                 // 1 si Q(x) < 0, 0 si Q(x) >= 0
 } partial_entry;
 
 typedef struct{
@@ -140,6 +143,8 @@ typedef struct{
 	mpz_t roota;
 	/** tabla de parciales para 1LP */
 	partials_table partials;
+	/** límite para large primes: large_mult * primo_más_grande_de_la_base */
+	unsigned long large_prime_bound;
 	/** parámetros de criba interpolados para este N */
 	sieve_param_t sieve_params;
 }qs_struct;

@@ -50,8 +50,10 @@ int main(int argc, char * argv[]){
 	if(mpz_sgn(qx)<0)
 		mpz_mul_si(qx,qx,-1);
 
-	// En modo MPQS: leer roota_list.txt (un roota por relación) y multiplicar qx por cada roota²
-	// Relación: (a*x+b)² = roota² * Q(x) mod N, así que ∏(a*x+b)² = ∏(roota_i² * Q_i)
+	// En modo MPQS: leer roota_list.txt (un roota o varios rootas separados por coma
+	// por relación) y multiplicar qx por cada roota²
+	// Para relaciones normales: una línea = un roota
+	// Para relaciones combinadas (1LP): una línea = "roota1,roota2"
 	FILE *rl = fopen("roota_list.txt", "r");
 	if (rl != NULL) {
 		mpz_t ri;
@@ -60,10 +62,19 @@ int main(int argc, char * argv[]){
 			memset(buf, 0, BUFSIZ);
 			if(fgets(buf,BUFSIZ,rl)!=NULL){
 				if(buf[0]=='\n' || buf[0]=='\0') continue;
-				mpz_set_str(ri, buf, 10);
-				// qx *= ri^2
-				mpz_mul(qx, qx, ri);
-				mpz_mul(qx, qx, ri);
+				// Parsear múltiples rootas separadas por coma en la misma línea
+				char *token = strtok(buf, ",\n");
+				while(token != NULL){
+					// Eliminar espacios
+					while(*token == ' ') token++;
+					if(*token != '\0'){
+						mpz_set_str(ri, token, 10);
+						// qx *= ri^2
+						mpz_mul(qx, qx, ri);
+						mpz_mul(qx, qx, ri);
+					}
+					token = strtok(NULL, ",\n");
+				}
 			}
 		}
 		fclose(rl);
