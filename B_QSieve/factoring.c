@@ -10,6 +10,11 @@
 int trialDivision(mpz_t Qxi, qs_struct * qs_data, mpz_t Xi);
 int trialDivisionRecip(mpz_t Qxi, qs_struct *qs_data, mpz_t Xi, unsigned long sieve_offset);
 void insertarNumero(matrix * matriz, int posFila, int posColumna, int valor);
+int factor_cofactor_pollard(mpz_t cofactor, unsigned long lp_bound,
+                            unsigned long *f1, unsigned long *f2);
+int try_combine_partial(qs_struct *qs_data, mpz_t Qxi, mpz_t Xi,
+                        int *exp_vec, int sign,
+                        unsigned long lp1, unsigned long lp2);
 
 /**
  * @brief Añade los factores de 'a' al vector de exponentes en la matriz.
@@ -259,6 +264,252 @@ void agregarAVectorDiv(qs_struct * qs_data, data_divT * data_d){
 }
 
 /*--------------------------------------------------------------------
+ * factor_cofactor_pollard — Factorizar un cofactor con Pollard-rho (GMP).
+ *
+ * Intenta dividir 'cofactor' en dos primos f1, f2 tales que
+ * ambos < lp_bound. Usa la función mpz de GMP para Pollard-rho
+ * con iteraciones limitadas.
+ *
+ * @param cofactor   Número a factorizar (compuesto, > 1)
+ * @param lp_bound   Límite para large primes
+ * @param f1, f2     Salida: los dos factores (si retorna 1)
+ * @return 1 si se factorizó, 0 si no
+ *--------------------------------------------------------------------*/
+int factor_cofactor_pollard(mpz_t cofactor, unsigned long lp_bound,
+                            unsigned long *f1, unsigned long *f2)
+{
+    /* Pollard-rho con función f(x) = x²+c mod n */
+    mpz_t x, y, d, temp, n;
+    mpz_inits(x, y, d, temp, n, NULL);
+    mpz_set(n, cofactor);
+
+    /* Probar varias semillas c */
+    for (unsigned long c = 1; c <= 20; c++) {
+        mpz_set_ui(x, 2);
+        mpz_set_ui(y, 2);
+
+        for (unsigned long iter = 0; iter < 10000; iter++) {
+            /* x = x²+c mod n */
+            mpz_mul(x, x, x);
+            mpz_add_ui(x, x, c);
+            mpz_mod(x, x, n);
+            /* y = (y²+c)²+c mod n (paso doble) */
+            mpz_mul(y, y, y);
+            mpz_add_ui(y, y, c);
+            mpz_mod(y, y, n);
+            mpz_mul(y, y, y);
+            mpz_add_ui(y, y, c);
+            mpz_mod(y, y, n);
+            /* d = gcd(|x-y|, n) */
+            mpz_sub(temp, x, y);
+            mpz_abs(temp, temp);
+            mpz_gcd(d, temp, n);
+
+            if (mpz_cmp_ui(d, 1) > 0 && mpz_cmp(d, n) < 0) {
+                /* Factor encontrado */
+                if (mpz_fits_ulong_p(d)) {
+                    *f1 = mpz_get_ui(d);
+                    mpz_divexact(temp, n, d);
+                    if (mpz_fits_ulong_p(temp)) {
+                        *f2 = mpz_get_ui(temp);
+                        mpz_clears(x, y, d, temp, n, NULL);
+                        return 1;
+                    }
+                }
+                mpz_clears(x, y, d, temp, n, NULL);
+                return 0;
+            }
+            if (mpz_cmp(d, n) == 0) break; /* ciclo, probar otra c */
+        }
+    }
+    mpz_clears(x, y, d, temp, n, NULL);
+    return 0;
+}
+
+/*--------------------------------------------------------------------
+ * store_partial — Almacenar una relación parcial (1LP o 2LP)
+ *--------------------------------------------------------------------*/
+static void store_partial(qs_struct *qs_data, mpz_t Qxi, mpz_t Xi,
+                          int *exp_vec, int sign,
+                          unsigned long lp1, unsigned long lp2)
+{
+    if (qs_data->partials.n >= qs_data->partials.capacity) {
+        unsigned long newcap = qs_data->partials.capacity == 0 ?
+                               1024 : qs_data->partials.capacity * 2;
+        qs_data->partials.entries = realloc(qs_data->partials.entries,
+                                            newcap * sizeof(partial_entry));
+        qs_data->partials.capacity = newcap;
+    }
+    unsigned long idx = qs_data->partials.n++;
+    partial_entry *e = &qs_data->partials.entries[idx];
+    e->large_prime = lp1;
+    e->large_prime2 = lp2; /* 0 para 1LP, != 0 para 2LP */
+    e->exponents = exp_vec; /* transferir ownership */
+    e->sign = sign;
+    mpz_init(e->lhs);
+    mpz_mul(e->lhs, qs_data->poly.a, Xi);
+    mpz_add(e->lhs, e->lhs, qs_data->poly.b);
+    mpz_init_set(e->Qx, Qxi);
+    mpz_init_set(e->roota, qs_data->roota);
+    e->num_a_factors = qs_data->siqs_state.num_factors;
+    for (unsigned int j = 0; j < e->num_a_factors; j++)
+        e->a_factor_fb_idx[j] = qs_data->siqs_state.factor_fb_idx[j];
+    mpz_init_set(e->a_value, qs_data->poly.a);
+}
+
+/*--------------------------------------------------------------------
+ * combine_two_partials — Combinar dos parciales que comparten un primo grande.
+ *
+ * El primo compartido se cancela (exponente par → desaparece mod 2).
+ * Si una o ambas son 2LP, los primos NO compartidos quedan como
+ * new_lp1 y new_lp2 en la combinación. Si ambos no-compartidos
+ * también se cancelan, la combinación es una full relation.
+ *
+ * Retorna: 1 = full relation directa,
+ *          3 = nueva parcial (combinada pero con 1 o 2 LP residuales)
+ *--------------------------------------------------------------------*/
+static int combine_two_partials(qs_struct *qs_data,
+                                int *exp_vec_a, int sign_a,
+                                mpz_t Qxi_a, mpz_t Xi_a,
+                                partial_entry *match,
+                                unsigned long shared_lp,
+                                unsigned long *remaining_lps,
+                                int *n_remaining)
+{
+    (void)shared_lp; /* se cancela automáticamente en el XOR de exponentes */
+
+    /* Recopilar los primos grandes NO compartidos de ambos lados.
+     * lado A: exp_vec_a con primos lp1_a, lp2_a (ambos o uno provienen del caller)
+     * lado B: match con lp1_b, lp2_b
+     * El primo compartido (shared_lp) aparece en ambos lados → se cancela.
+     * Los primos residuales son los que no se cancelan. */
+
+    /* Escribir vector combinado (XOR) en la matriz */
+    int combined_sign = (sign_a + match->sign) % 2;
+    if (combined_sign)
+        insertarNumero(&qs_data->mat, qs_data->n_BSuaves, 0, 1);
+    for (long i = 0; i < qs_data->base.length; i++) {
+        int combined_exp = (exp_vec_a[i] + match->exponents[i]) % 2;
+        insertarNumero(&qs_data->mat, qs_data->n_BSuaves, i + 1, combined_exp);
+    }
+    add_a_factors_to_matrix(qs_data);
+    for (unsigned int j = 0; j < match->num_a_factors; j++)
+        insertarNumero(&qs_data->mat, qs_data->n_BSuaves,
+                       (int)match->a_factor_fb_idx[j] + 1, 1);
+
+    /* Escribir relación combinada en polinomio.txt */
+    FILE *fp = fopen("polinomio.txt", "a");
+    if (fp) {
+        mpz_t combined_lhs, combined_Q, my_lhs, aQ1, aQ2;
+        mpz_inits(combined_lhs, combined_Q, my_lhs, aQ1, aQ2, NULL);
+        mpz_mul(my_lhs, qs_data->poly.a, Xi_a);
+        mpz_add(my_lhs, my_lhs, qs_data->poly.b);
+        mpz_mul(combined_lhs, my_lhs, match->lhs);
+        mpz_mul(aQ1, qs_data->poly.a, Qxi_a);
+        mpz_mul(aQ2, match->a_value, match->Qx);
+        mpz_mul(combined_Q, aQ1, aQ2);
+        mpz_out_str(fp, 10, combined_lhs);
+        fprintf(fp, ";");
+        mpz_out_str(fp, 10, combined_Q);
+        fprintf(fp, ";");
+        mpz_out_str(fp, 10, qs_data->roota);
+        fprintf(fp, ",");
+        mpz_out_str(fp, 10, match->roota);
+        fprintf(fp, "\n");
+        fflush(fp);
+        fclose(fp);
+        mpz_clears(combined_lhs, combined_Q, my_lhs, aQ1, aQ2, NULL);
+    }
+
+    *n_remaining = 0;
+    (void)remaining_lps;
+    /* Nota: los primos no compartidos se tratan como factores del cofactor
+     * combinado. Para que la relación sea full, necesitamos que TODOS los
+     * primos grandes se cancelen. Para 1LP + 1LP con mismo LP → full.
+     * Para 2LP + 1LP o 2LP + 2LP con un solo LP compartido → hay residuo.
+     * En esta primera versión, solo combinamos 1LP con 1LP (ambas comparten
+     * el único LP) y 2LP con 2LP que comparten ambos LPs.
+     * Las combinaciones más complejas se dejan para futuras mejoras. */
+
+    return 1; /* full relation (el caller verifica que sea válida) */
+}
+
+/*--------------------------------------------------------------------
+ * try_combine_partial — Buscar match para una parcial y combinar.
+ *
+ * Para 1LP (lp2==0): buscar otra parcial con el mismo LP.
+ * Para 2LP (lp2!=0): buscar otra parcial que comparta AL MENOS un LP.
+ *   - Si comparte ambos: combinación directa → full relation.
+ *   - Si comparte uno: la combinación tiene un LP residual.
+ *     Podemos intentar combinar ESA con otra parcial (cadena).
+ *     En esta versión, solo hacemos combinaciones simples (match directo).
+ *
+ * @return 0 = almacenada como parcial, 2 = combined → full relation
+ *--------------------------------------------------------------------*/
+int try_combine_partial(qs_struct *qs_data, mpz_t Qxi, mpz_t Xi,
+                        int *exp_vec, int sign,
+                        unsigned long lp1, unsigned long lp2)
+{
+    /* Buscar match en la tabla de parciales */
+    long match_idx = -1;
+    unsigned long shared_lp = 0;
+
+    for (unsigned long k = 0; k < qs_data->partials.n; k++) {
+        partial_entry *pe = &qs_data->partials.entries[k];
+
+        if (lp2 == 0) {
+            /* 1LP: buscar otra 1LP con el mismo primo grande */
+            if (pe->large_prime2 == 0 && pe->large_prime == lp1) {
+                match_idx = (long)k;
+                shared_lp = lp1;
+                break;
+            }
+        } else {
+            /* 2LP: buscar otra parcial que comparta ambos LPs,
+             * o al menos uno de ellos.
+             * Prioridad 1: otra 2LP con los mismos dos LPs */
+            if (pe->large_prime2 != 0) {
+                if ((pe->large_prime == lp1 && pe->large_prime2 == lp2) ||
+                    (pe->large_prime == lp2 && pe->large_prime2 == lp1)) {
+                    /* Ambos LPs coinciden → full relation */
+                    match_idx = (long)k;
+                    shared_lp = lp1; /* ambos se cancelan */
+                    break;
+                }
+            }
+            /* Prioridad 2: otra 1LP con lp1 o lp2 → NO usamos esto
+             * en la versión simple porque el resultado tendría un LP
+             * residual y necesitaría otra ronda de combinación.
+             * Lo dejamos para futuras mejoras. */
+        }
+    }
+
+    if (match_idx >= 0) {
+        partial_entry *match = &qs_data->partials.entries[match_idx];
+        unsigned long remaining_lps[2];
+        int n_remaining = 0;
+        int rc = combine_two_partials(qs_data, exp_vec, sign, Qxi, Xi,
+                                       match, shared_lp,
+                                       remaining_lps, &n_remaining);
+
+        /* Eliminar la parcial usada (swap con última) */
+        free(match->exponents);
+        mpz_clears(match->lhs, match->Qx, match->roota, match->a_value, NULL);
+        unsigned long last = qs_data->partials.n - 1;
+        if ((unsigned long)match_idx != last)
+            qs_data->partials.entries[match_idx] = qs_data->partials.entries[last];
+        qs_data->partials.n--;
+
+        (void)rc;
+        return 2; /* combined partial = full relation */
+    } else {
+        /* No hay match: guardar esta parcial */
+        store_partial(qs_data, Qxi, Xi, exp_vec, sign, lp1, lp2);
+        return 0;
+    }
+}
+
+/*--------------------------------------------------------------------
  * trialDivisionRecip — Trial division usando recíprocos precomputados
  *
  * Test de divisibilidad: en vez de mpz_divisible_p (GMP genérico),
@@ -358,100 +609,67 @@ int trialDivisionRecip(mpz_t Qxi, qs_struct *qs_data, mpz_t Xi,
         return 1;
     }
 
-    /* ¿Es un posible large prime? */
+    /* ¿Es un posible large prime (1LP)? */
     unsigned long residuo = 0;
     if (mpz_fits_ulong_p(res))
         residuo = mpz_get_ui(res);
 
     if (residuo > 1 && residuo < qs_data->large_prime_bound &&
         mpz_probab_prime_p(res, 15) > 0) {
-        /* Buscar si ya tenemos una parcial con el mismo large prime */
-        long match_idx = -1;
-        for (unsigned long k = 0; k < qs_data->partials.n; k++) {
-            if (qs_data->partials.entries[k].large_prime == residuo) {
-                match_idx = (long)k;
-                break;
+        int rc = try_combine_partial(qs_data, Qxi, Xi, exp_vec, sign,
+                                     residuo, 0);
+        mpz_clear(res);
+        if (rc == 2) { free(exp_vec); }
+        /* rc==0: exp_vec transferido a la parcial */
+        return rc;
+    }
+
+    /* ¿Es un posible double large prime (2LP)?
+     * Condiciones (estilo msieve):
+     *  - 2LP habilitado (large_prime_bound2 > 0)
+     *  - cofactor > max_fb2 (si es menor, sería un primo => ya se habría capturado arriba)
+     *  - cofactor <= large_prime_bound2
+     *  - cofactor es compuesto (test base-2)
+     *  - se puede factorizar con Pollard-rho en GMP
+     *  - ambos factores < large_prime_bound
+     */
+    if (qs_data->large_prime_bound2 > 0 && mpz_cmp_ui(res, 1) > 0) {
+        unsigned long long res_ull = 0;
+        if (mpz_sizeinbase(res, 2) <= 64) {
+            /* Extraer como uint64 */
+            if (mpz_fits_ulong_p(res)) {
+                res_ull = mpz_get_ui(res);
+            } else {
+                /* Para sistemas donde unsigned long es 32 bits */
+                mpz_t hi, lo;
+                mpz_inits(hi, lo, NULL);
+                mpz_tdiv_q_2exp(hi, res, 32);
+                mpz_tdiv_r_2exp(lo, res, 32);
+                res_ull = ((unsigned long long)mpz_get_ui(hi) << 32) |
+                          (unsigned long long)mpz_get_ui(lo);
+                mpz_clears(hi, lo, NULL);
             }
         }
 
-        if (match_idx >= 0) {
-            /* ¡Match! Combinar las dos parciales */
-            partial_entry *match = &qs_data->partials.entries[match_idx];
-
-            int combined_sign = (sign + match->sign) % 2;
-            if (combined_sign)
-                insertarNumero(&qs_data->mat, qs_data->n_BSuaves, 0, 1);
-            for (long i = 0; i < qs_data->base.length; i++) {
-                int combined_exp = (exp_vec[i] + match->exponents[i]) % 2;
-                insertarNumero(&qs_data->mat, qs_data->n_BSuaves, i + 1, combined_exp);
+        if (res_ull > qs_data->max_fb2 &&
+            res_ull <= qs_data->large_prime_bound2 &&
+            mpz_probab_prime_p(res, 1) == 0) {
+            /* Compuesto: intentar factorizar con Pollard-rho de GMP */
+            unsigned long f1 = 0, f2 = 0;
+            int found = factor_cofactor_pollard(res, qs_data->large_prime_bound, &f1, &f2);
+            if (found && f1 > 1 && f2 > 1 &&
+                f1 < qs_data->large_prime_bound &&
+                f2 < qs_data->large_prime_bound) {
+                /* ¡2LP encontrada! Ordenar: f1 <= f2 */
+                if (f1 > f2) { unsigned long tmp = f1; f1 = f2; f2 = tmp; }
+                int rc = try_combine_partial(qs_data, Qxi, Xi, exp_vec, sign,
+                                             f1, f2);
+                qs_data->n_dlp_stored++;
+                if (rc == 2) qs_data->n_dlp_combined++;
+                mpz_clear(res);
+                if (rc == 2) { free(exp_vec); }
+                return rc;
             }
-            add_a_factors_to_matrix(qs_data);
-            for (unsigned int j = 0; j < match->num_a_factors; j++)
-                insertarNumero(&qs_data->mat, qs_data->n_BSuaves,
-                               (int)match->a_factor_fb_idx[j] + 1, 1);
-
-            /* Escribir relación combinada en polinomio.txt */
-            FILE *fp = fopen("polinomio.txt", "a");
-            if (fp) {
-                mpz_t combined_lhs, combined_Q, my_lhs, aQ1, aQ2;
-                mpz_inits(combined_lhs, combined_Q, my_lhs, aQ1, aQ2, NULL);
-                mpz_mul(my_lhs, qs_data->poly.a, Xi);
-                mpz_add(my_lhs, my_lhs, qs_data->poly.b);
-                mpz_mul(combined_lhs, my_lhs, match->lhs);
-                mpz_mul(aQ1, qs_data->poly.a, Qxi);
-                mpz_mul(aQ2, match->a_value, match->Qx);
-                mpz_mul(combined_Q, aQ1, aQ2);
-                mpz_out_str(fp, 10, combined_lhs);
-                fprintf(fp, ";");
-                mpz_out_str(fp, 10, combined_Q);
-                fprintf(fp, ";");
-                mpz_out_str(fp, 10, qs_data->roota);
-                fprintf(fp, ",");
-                mpz_out_str(fp, 10, match->roota);
-                fprintf(fp, "\n");
-                fflush(fp);
-                fclose(fp);
-                mpz_clears(combined_lhs, combined_Q, my_lhs, aQ1, aQ2, NULL);
-            }
-
-            /* Eliminar la parcial usada (swap con última) */
-            free(match->exponents);
-            mpz_clears(match->lhs, match->Qx, match->roota, match->a_value, NULL);
-            unsigned long last = qs_data->partials.n - 1;
-            if ((unsigned long)match_idx != last)
-                qs_data->partials.entries[match_idx] = qs_data->partials.entries[last];
-            qs_data->partials.n--;
-
-            mpz_clear(res);
-            free(exp_vec);
-            return 2;
-        } else {
-            /* No hay match: guardar esta parcial */
-            if (qs_data->partials.n >= qs_data->partials.capacity) {
-                unsigned long newcap = qs_data->partials.capacity == 0 ?
-                                       1024 : qs_data->partials.capacity * 2;
-                qs_data->partials.entries = realloc(qs_data->partials.entries,
-                                                    newcap * sizeof(partial_entry));
-                qs_data->partials.capacity = newcap;
-            }
-            unsigned long idx = qs_data->partials.n++;
-            partial_entry *e = &qs_data->partials.entries[idx];
-            e->large_prime = residuo;
-            e->exponents = exp_vec; /* transferir ownership */
-            e->sign = sign;
-            mpz_init(e->lhs);
-            mpz_mul(e->lhs, qs_data->poly.a, Xi);
-            mpz_add(e->lhs, e->lhs, qs_data->poly.b);
-            mpz_init_set(e->Qx, Qxi);
-            mpz_init_set(e->roota, qs_data->roota);
-            e->num_a_factors = qs_data->siqs_state.num_factors;
-            for (unsigned int j = 0; j < e->num_a_factors; j++)
-                e->a_factor_fb_idx[j] = qs_data->siqs_state.factor_fb_idx[j];
-            mpz_init_set(e->a_value, qs_data->poly.a);
-
-            mpz_clear(res);
-            /* NO free exp_vec, se transfirió a la parcial */
-            return 0;
         }
     }
 
@@ -631,6 +849,7 @@ int trialDivision(mpz_t Qxi, qs_struct * qs_data, mpz_t Xi){
 			unsigned long idx = qs_data->partials.n++;
 			partial_entry *e = &qs_data->partials.entries[idx];
 			e->large_prime = residuo;
+			e->large_prime2 = 0; /* 1LP: sin segundo large prime */
 			e->exponents = exp_vec; /* transferir ownership */
 			e->sign = sign;
 			mpz_init(e->lhs);

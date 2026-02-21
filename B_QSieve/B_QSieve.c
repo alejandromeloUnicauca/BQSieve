@@ -189,6 +189,10 @@ int main(int argc, char **argv)
 	qs_data.partials.n = 0;
 	qs_data.partials.capacity = 0;
 	qs_data.large_prime_bound = 0;
+	qs_data.large_prime_bound2 = 0;
+	qs_data.max_fb2 = 0;
+	qs_data.n_dlp_stored = 0;
+	qs_data.n_dlp_combined = 0;
 	qs_data.multiplier = 1;
 	mpz_inits(qs_data.n,qs_data.intervalo.length,NULL);
 	if(bvalue!=NULL)qs_data.blocks.length = atol(bvalue);
@@ -269,6 +273,25 @@ int main(int argc, char **argv)
 		qs_data.large_prime_bound = (unsigned long)qs_data.sieve_params.large_mult * p_max;
 		printf("Large prime bound: %lu (large_mult=%u × p_max=%lu)\n",
 			qs_data.large_prime_bound, qs_data.sieve_params.large_mult, p_max);
+
+		/* max_fb2 = p_max² (umbral mínimo: cofactores < max_fb2 son primos → 1LP) */
+		qs_data.max_fb2 = (unsigned long long)p_max * (unsigned long long)p_max;
+
+		/* 2LP habilitado para N >= 85 dígitos (~282 bits), como msieve.
+		 * large_prime_bound2 = LP_bound^1.8 (cofactor máximo para 2LP).
+		 * Ambos factores del cofactor deben ser < LP_bound. */
+		unsigned int nbits = (unsigned int)mpz_sizeinbase(qs_data.n, 2);
+		if (nbits >= 282 && qs_data.base.length >= 800) {
+			double lp = (double)qs_data.large_prime_bound;
+			qs_data.large_prime_bound2 = (unsigned long long)(lp * pow(lp, 0.8));
+			printf("Double Large Prime bound: %llu (%u-%llu bits)\n",
+				qs_data.large_prime_bound2,
+				(unsigned int)(log2((double)qs_data.max_fb2)),
+				(unsigned long long)(log2((double)qs_data.large_prime_bound2)));
+		} else {
+			qs_data.large_prime_bound2 = 0;
+			printf("Double Large Primes: deshabilitado (N < 282 bits o fb < 800)\n");
+		}
 	}
 
 	double segundos = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;
@@ -375,6 +398,10 @@ int main(int argc, char **argv)
 	fflush(stdout);
 	printf("Numeros B_Suaves encontrados:%ld\n",qs_data.n_BSuaves);
 	printf("Parciales almacenadas sin emparejar: %lu\n", qs_data.partials.n);
+	if (qs_data.large_prime_bound2 > 0) {
+		printf("2LP: almacenadas=%lu, combinadas=%lu\n",
+			qs_data.n_dlp_stored, qs_data.n_dlp_combined);
+	}
 	t_final = clock();
 	double segundosPolinomio = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;
 	printf("tiempo de calculo del polinomio:%fs\n",segundosPolinomio);	

@@ -130,7 +130,8 @@ typedef struct {
 } siqs_poly_state;
 
 typedef struct{
-    unsigned long large_prime; // primo grande (residuo tras trial division)
+    unsigned long large_prime;  // primer primo grande (0 si no hay)
+    unsigned long large_prime2; // segundo primo grande (0 si 1LP, != 0 si 2LP)
     mpz_t lhs;                // valor a*x+b asociado a esta relación
     mpz_t Qx;                 // valor Q(x) original (con signo)
     mpz_t roota;              // roota del polinomio que generó esta relación
@@ -180,10 +181,17 @@ typedef struct{
 	mpz_t roota;
 	/** estado del generador SIQS (múltiples b por cada a) */
 	siqs_poly_state siqs_state;
-	/** tabla de parciales para 1LP */
+	/** tabla de parciales para 1LP y 2LP */
 	partials_table partials;
 	/** límite para large primes: large_mult * primo_más_grande_de_la_base */
 	unsigned long large_prime_bound;
+	/** límite para double large primes: LP_bound^1.8 (cofactor máximo para 2LP) */
+	unsigned long long large_prime_bound2;
+	/** cuadrado del primo más grande de la base (umbral mínimo para 2LP) */
+	unsigned long long max_fb2;
+	/** contadores de relaciones 2LP */
+	unsigned long n_dlp_stored;
+	unsigned long n_dlp_combined;
 	/** parámetros de criba interpolados para este N */
 	sieve_param_t sieve_params;
 	/** multiplicador Knuth-Schroeppel (k tal que factorizamos k*N) */
