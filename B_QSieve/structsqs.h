@@ -108,6 +108,17 @@ typedef struct{
 } partials_table;
 
 /**
+ * @brief Parámetros de criba precompilados, indexados por número de bits de N.
+ * Adaptado de la tabla de msieve (Jason Papadopoulos, dominio público).
+ */
+typedef struct {
+	unsigned int bits;       /* tamaño en bits del número a factorizar */
+	unsigned int fb_size;    /* tamaño de la base de primos */
+	unsigned int large_mult; /* multiplicador para large prime bound (reservado) */
+	unsigned int sieve_size; /* mitad del intervalo de criba: se criba [-sieve_size, +sieve_size] */
+} sieve_param_t;
+
+/**
  * @brief estructura que contiene los datos necesarios para factorizar
  * un numero n
  * */
@@ -129,6 +140,8 @@ typedef struct{
 	mpz_t roota;
 	/** tabla de parciales para 1LP */
 	partials_table partials;
+	/** parámetros de criba interpolados para este N */
+	sieve_param_t sieve_params;
 }qs_struct;
 
 //divisiones sucesivas

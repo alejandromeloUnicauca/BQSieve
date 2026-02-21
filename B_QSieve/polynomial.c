@@ -20,56 +20,30 @@ int generate_mpqs_poly(qs_struct *qs_data){
     mpz_inits(qtmp, tmp2, NULL);
 
     // Si roota == 0, calcular valor inicial
+    // target_a = sqrt(2*N) / sieve_size  (valor óptimo de 'a')
+    // Como a = roota², queremos roota ≈ target_a^(1/2) = (sqrt(2*N) / sieve_size)^(1/2)
     if (mpz_cmp_ui(qs_data->roota, 0) == 0) {
-        // 1) calcular bound = int(5 * (log10(n))^2)
-        mpfr_t nn, log10n, tmpfr;
-        mpfr_inits(nn, log10n, tmpfr, NULL);
-        mpfr_set_z(nn, qs_data->n, MPFR_RNDN);
-        mpfr_log(tmpfr, nn, MPFR_RNDZ);
-        mpfr_set_str(log10n, "2.302585092994046", 10, MPFR_RNDZ);
-        mpfr_div(log10n, tmpfr, log10n, MPFR_RNDZ);
-        mpfr_mul(tmpfr, log10n, log10n, MPFR_RNDZ);
-        mpfr_mul_ui(tmpfr, tmpfr, 5, MPFR_RNDZ);
-        unsigned long bound = mpfr_get_ui(tmpfr, MPFR_RNDZ);
-        mpfr_clears(nn, log10n, tmpfr, NULL);
+        mpz_t root2n, target_a;
+        mpz_inits(root2n, target_a, NULL);
 
-        // construir factorbase temporal contando primos <= bound con legendre==1
-        unsigned long fb_count = 0;
-        for (unsigned long p = 2; p <= bound; p++) {
-            int is_prime = 1;
-            if (p < 2) is_prime = 0;
-            for (unsigned long d = 2; d * d <= p && is_prime; d++) {
-                if (p % d == 0) { is_prime = 0; }
-            }
-            if (!is_prime) continue;
-            mpz_t p_mp;
-            mpz_init_set_ui(p_mp, p);
-            int leg = mpz_legendre(qs_data->n, p_mp);
-            mpz_clear(p_mp);
-            if (leg == 1 || p == 2) {
-                fb_count++;
-            }
-        }
-
-        unsigned long xmax = fb_count * 60 * 4;
-        if (xmax == 0) xmax = 1;
-
-        // calcular root2n = floor(sqrt(2*n))
-        mpz_t root2n, tmpz;
-        mpz_inits(root2n, tmpz, NULL);
+        // root2n = floor(sqrt(2*N))
         mpz_mul_ui(root2n, qs_data->n, 2);
         mpz_sqrt(root2n, root2n);
 
-        // roota = isqrt(root2n // xmax)
-        mpz_fdiv_q_ui(tmpz, root2n, xmax);
-        mpz_sqrt(qs_data->roota, tmpz);
+        // target_a = root2n / sieve_size
+        unsigned long sieve_size = qs_data->sieve_params.sieve_size;
+        if (sieve_size == 0) sieve_size = 65536; // fallback
+        mpz_fdiv_q_ui(target_a, root2n, sieve_size);
+
+        // roota = floor(sqrt(target_a))
+        mpz_sqrt(qs_data->roota, target_a);
         if (mpz_cmp_ui(qs_data->roota, 3) < 0)
             mpz_set_ui(qs_data->roota, 3);
         // make odd if even
         if (mpz_even_p(qs_data->roota))
             mpz_add_ui(qs_data->roota, qs_data->roota, 1);
 
-        mpz_clears(root2n, tmpz, NULL);
+        mpz_clears(root2n, target_a, NULL);
     }
 
     // Avanzar roota al siguiente primo con legendre(n, roota) == 1

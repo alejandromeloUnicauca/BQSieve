@@ -17,8 +17,7 @@
 void createBlocks(int n, qs_struct * qs_data);
 void crearMatrizNula(qs_struct * qs_data);
 void imprimirMatriz(matrix matriz);  
-void getPrimesBaseLength(mpz_t n, long * result);
-void getIntervalLength(long base_length, mpz_t result);
+void getSieveParams(mpz_t n, sieve_param_t *params);
 long generatePrimesBase(mpz_t n, long bound, prime * primes);
 void freeStruct(qs_struct * qs_data);
 void parseArgs(int argc, char **argv, int *flagd, int *flagh, char **hdvalue, char **bvalue, char **cvalue);
@@ -100,8 +99,12 @@ int main(int argc, char **argv)
 
 	printf("Cores:%d\n",CORES);
 	
-	//longitud de la base de primos
-	getPrimesBaseLength(qs_data.n,&qs_data.base.length);
+	//Obtener parámetros de criba interpolados según el tamaño de N
+	getSieveParams(qs_data.n, &qs_data.sieve_params);
+	qs_data.base.length = qs_data.sieve_params.fb_size;
+	printf("Parámetros de criba: bits=%u, fb_size=%u, sieve_size=%u, large_mult=%u\n",
+		qs_data.sieve_params.bits, qs_data.sieve_params.fb_size,
+		qs_data.sieve_params.sieve_size, qs_data.sieve_params.large_mult);
 	printf("Longitud de la base de primos:%ld\n", qs_data.base.length);
 	
 	//Generar base de primos
@@ -119,8 +122,8 @@ int main(int argc, char **argv)
 	}
 	printf("Base de primos generada. %ld primos en la base\n",residuos);
 
-	//Intervalo del polinomio (cuadrado de la base de primos)
-	getIntervalLength(qs_data.base.length, qs_data.intervalo.length);
+	//Intervalo de criba: usar sieve_size de la tabla de parámetros
+	mpz_set_ui(qs_data.intervalo.length, qs_data.sieve_params.sieve_size);
 
 	double segundos = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;
 	printf("tiempo de creacion de la base:%fs\n",segundos);
@@ -507,45 +510,86 @@ long generatePrimesBase(mpz_t n, long bound, prime * primes){
 }
 
 /**
- * @brief calcula el numero de residuos que se necesitan
- * para factorizar el numero n
- * @param n: numero que se le calcula la longitud de la base
- * @param result: variable en la que se devuelve el valor calculado
+ * @brief Tabla de parámetros de criba precompilados, indexados por bits de N.
+ * Adaptada de msieve v1.46 (Jason Papadopoulos, dominio público).
+ * {bits, fb_size, large_mult, sieve_size}
  */
-void getPrimesBaseLength(mpz_t n, long * result){
-	//formuala: result = ((e^sqrt(ln(n)*ln(ln(n))))^(sqrt(2)/4))
-	
-	//Declaracion de variables
-	mpfr_t num, ln1, ln2, e, pow;
-	
-	//inicializacion de variables
-	mpfr_inits(ln1,ln2,e,pow,NULL);
-	mpfr_init2(num,mpz_sizeinbase(n,2));
-	mpfr_set_z(num,n,MPFR_RNDN);
-
-	mpfr_set_str(e, "2.71828182845904523536", 10, MPFR_RNDZ);//define euler
-	mpfr_set_str(pow, "0.3535533905932738", 10, MPFR_RNDZ);//define sqrt(2)/4
-	mpfr_log(ln1, num, MPFR_RNDZ);//ln1= log(num)
-	mpfr_log(ln2, ln1,MPFR_RNDZ);//ln2=log(ln1)
-	mpfr_mul(num, ln1, ln2, MPFR_RNDZ);//num=ln1*ln2
-	mpfr_sqrt(num, num, MPFR_RNDZ);//sqrt(num)
-	mpfr_pow (num, e, num, MPFR_RNDZ);//num=e^n
-	mpfr_pow (num, num, pow, MPFR_RNDZ);//num=num^pow
-	//mpfr_get_z(result, num, MPFR_RNDZ);//se le asigna a result la parte entera de num
-	
-	*result = mpfr_get_ui(num,MPFR_RNDZ);
-	mpfr_clears(num,ln1,ln2,e,pow,NULL);
-}
+static const sieve_param_t prebuilt_params[] = {
+	{ 64,    100,  40,  1 * 65536},
+	{128,    450,  40,  1 * 65536},
+	{183,   2000,  40,  1 * 65536},
+	{200,   3000,  50,  1 * 65536},
+	{212,   5400,  50,  3 * 65536},
+	{233,  10000, 100,  3 * 65536},
+	{249,  27000, 100,  3 * 65536},
+	{266,  50000, 100,  3 * 65536},
+	{283,  55000,  80,  3 * 65536},
+	{298,  60000,  80,  9 * 65536},
+	{315,  80000, 150,  9 * 65536},
+	{332, 100000, 150,  9 * 65536},
+	{348, 140000, 150,  9 * 65536},
+	{363, 210000, 150, 13 * 65536},
+	{379, 300000, 150, 17 * 65536},
+	{395, 400000, 150, 21 * 65536},
+	{415, 500000, 150, 25 * 65536},
+	{440, 700000, 150, 33 * 65536},
+	{465, 900000, 150, 50 * 65536},
+	{490,1100000, 150, 75 * 65536},
+	{512,1300000, 150,100 * 65536},
+};
+#define NUM_PREBUILT_PARAMS (sizeof(prebuilt_params)/sizeof(sieve_param_t))
 
 /**
- * @brief calcula el intervalo en el que se deben probar los residuos 
- * cuadraticos como el cuadrado de la longitud de la base de primos
- * @param base_length: longitud de la base de primos
- * @param result: variable que se utiliza para devolver el resultado (base_length^2)
+ * @brief Obtiene los parámetros de criba interpolados según el tamaño en bits de N.
+ *
+ * Si N cae entre dos entradas de la tabla, se interpola linealmente.
+ * Garantiza fb_size >= 100.
+ *
+ * @param n      Número a factorizar
+ * @param params Estructura de salida con los parámetros
  */
-void getIntervalLength(long base_length, mpz_t result){
-	mpz_set_si(result, base_length);
-	mpz_pow_ui(result, result, 2);
+void getSieveParams(mpz_t n, sieve_param_t *params) {
+	unsigned int bits = (unsigned int)mpz_sizeinbase(n, 2);
+
+	/* Si es más pequeño que la primera entrada, usar la primera */
+	if (bits <= prebuilt_params[0].bits) {
+		*params = prebuilt_params[0];
+		params->bits = bits;
+		return;
+	}
+
+	/* Si es más grande que la última entrada, usar la última */
+	if (bits >= prebuilt_params[NUM_PREBUILT_PARAMS - 1].bits) {
+		*params = prebuilt_params[NUM_PREBUILT_PARAMS - 1];
+		params->bits = bits;
+		return;
+	}
+
+	/* Buscar las dos entradas entre las que cae bits */
+	unsigned int i;
+	for (i = 0; i < NUM_PREBUILT_PARAMS - 1; i++) {
+		if (bits < prebuilt_params[i + 1].bits)
+			break;
+	}
+
+	/* Interpolación lineal ponderada */
+	const sieve_param_t *low  = &prebuilt_params[i];
+	const sieve_param_t *high = &prebuilt_params[i + 1];
+	unsigned int dist = high->bits - low->bits;
+	unsigned int wi = bits - low->bits;     /* peso hacia high */
+	unsigned int wj = high->bits - bits;    /* peso hacia low  */
+
+	params->bits = bits;
+	params->fb_size = (unsigned int)(
+		((double)low->fb_size * wj + (double)high->fb_size * wi) / dist + 0.5);
+	params->large_mult = (unsigned int)(
+		((double)low->large_mult * wj + (double)high->large_mult * wi) / dist + 0.5);
+	params->sieve_size = (unsigned int)(
+		((double)low->sieve_size * wj + (double)high->sieve_size * wi) / dist + 0.5);
+
+	/* Mínimo de 100 primos en la base */
+	if (params->fb_size < 100)
+		params->fb_size = 100;
 }
 
 void parseArgs(int argc, char **argv, int *flagd, int *flagh, char **hdvalue, char **bvalue, char **cvalue){
