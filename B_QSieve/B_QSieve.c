@@ -22,9 +22,12 @@ long generatePrimesBase(mpz_t n, long bound, prime * primes);
 void freeStruct(qs_struct * qs_data);
 void parseArgs(int argc, char **argv, int *flagd, int *flagh, char **hdvalue, char **bvalue, char **cvalue);
 void usage();
+extern int VERBOSE;
 
 //Cantidad de cores que se quieren usar para el cribado, 1 por defecto
 int CORES = 1;
+// Modo verbose: 0 = silencioso (solo resultado + tiempo), 1 = log detallado
+int VERBOSE = 0;
 
 /*--------------------------------------------------------------------
  * choose_multiplier — Multiplicador de Knuth-Schroeppel modificado
@@ -221,36 +224,36 @@ int main(int argc, char **argv)
 		exit(EXIT_FAILURE);
 	}
 	
-	gmp_printf("N:%Zd\n", qs_data.n);
+	if(VERBOSE) gmp_printf("N:%Zd\n", qs_data.n);
 	
 	//digitos de N
 	size_t sizeN = mpz_sizeinbase(qs_data.n, 10);
-	printf("Numero de digitos decimales: %zu\n",sizeN);
+	if(VERBOSE) printf("Numero de digitos decimales: %zu\n",sizeN);
 
-	printf("Cores:%d\n",CORES);
+	if(VERBOSE) printf("Cores:%d\n",CORES);
 	
 	//Obtener parámetros de criba interpolados según el tamaño de N (antes de multiplicar por k)
 	getSieveParams(qs_data.n, &qs_data.sieve_params);
 	qs_data.base.length = qs_data.sieve_params.fb_size;
-	printf("Parámetros de criba: bits=%u, fb_size=%u, sieve_size=%u, large_mult=%u\n",
+	if(VERBOSE) printf("Parámetros de criba: bits=%u, fb_size=%u, sieve_size=%u, large_mult=%u\n",
 		qs_data.sieve_params.bits, qs_data.sieve_params.fb_size,
 		qs_data.sieve_params.sieve_size, qs_data.sieve_params.large_mult);
 
 	// Elegir multiplicador Knuth-Schroeppel
 	qs_data.multiplier = choose_multiplier(qs_data.n, qs_data.sieve_params.fb_size);
-	printf("Multiplicador Knuth-Schroeppel: k=%u\n", qs_data.multiplier);
+	if(VERBOSE) printf("Multiplicador Knuth-Schroeppel: k=%u\n", qs_data.multiplier);
 	if (qs_data.multiplier > 1) {
 		mpz_mul_ui(qs_data.n, qs_data.n, qs_data.multiplier);
-		gmp_printf("kN:%Zd\n", qs_data.n);
+		if(VERBOSE) gmp_printf("kN:%Zd\n", qs_data.n);
 	}
 
-	printf("Longitud de la base de primos:%ld\n", qs_data.base.length);
+	if(VERBOSE) printf("Longitud de la base de primos:%ld\n", qs_data.base.length);
 	
 	//Generar base de primos
 	qs_data.base.primes = (prime*)malloc((qs_data.base.length)*sizeof(prime));
 	
 	t_inicio = clock();
-	printf("Generando base de primos...\n");
+	if(VERBOSE) printf("Generando base de primos...\n");
 	long residuos = generatePrimesBase(qs_data.n,qs_data.base.length,qs_data.base.primes);
 	t_final = clock();
 	// ajustar longitud real de la base al número de residuos encontrados
@@ -259,7 +262,7 @@ int main(int argc, char **argv)
 	if (residuos > 0) {
 		qs_data.base.primes = (prime*)realloc(qs_data.base.primes, residuos * sizeof(prime));
 	}
-	printf("Base de primos generada. %ld primos en la base\n",residuos);
+	if(VERBOSE) printf("Base de primos generada. %ld primos en la base\n",residuos);
 
 	// Precomputar raíces sqrt(N) mod p y campos nativos (uint32/uint8)
 	sieve_precompute_roots(&qs_data);
@@ -271,7 +274,7 @@ int main(int argc, char **argv)
 	{
 		unsigned long p_max = mpz_get_ui(qs_data.base.primes[qs_data.base.length - 1].value);
 		qs_data.large_prime_bound = (unsigned long)qs_data.sieve_params.large_mult * p_max;
-		printf("Large prime bound: %lu (large_mult=%u × p_max=%lu)\n",
+		if(VERBOSE) printf("Large prime bound: %lu (large_mult=%u × p_max=%lu)\n",
 			qs_data.large_prime_bound, qs_data.sieve_params.large_mult, p_max);
 
 		/* max_fb2 = p_max² (umbral mínimo: cofactores < max_fb2 son primos → 1LP) */
@@ -284,32 +287,32 @@ int main(int argc, char **argv)
 		if (nbits >= 282 && qs_data.base.length >= 800) {
 			double lp = (double)qs_data.large_prime_bound;
 			qs_data.large_prime_bound2 = (unsigned long long)(lp * pow(lp, 0.8));
-			printf("Double Large Prime bound: %llu (%u-%llu bits)\n",
+			if(VERBOSE) printf("Double Large Prime bound: %llu (%u-%llu bits)\n",
 				qs_data.large_prime_bound2,
 				(unsigned int)(log2((double)qs_data.max_fb2)),
 				(unsigned long long)(log2((double)qs_data.large_prime_bound2)));
 		} else {
 			qs_data.large_prime_bound2 = 0;
-			printf("Double Large Primes: deshabilitado (N < 282 bits o fb < 800)\n");
+			if(VERBOSE) printf("Double Large Primes: deshabilitado (N < 282 bits o fb < 800)\n");
 		}
 	}
 
 	double segundos = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;
-	printf("tiempo de creacion de la base:%fs\n",segundos);
+	if(VERBOSE) printf("tiempo de creacion de la base:%fs\n",segundos);
 	
 	//Crear bloques de la base
 	if(qs_data.blocks.length > 0){
 		int blockLength = ceil((float)qs_data.base.length/qs_data.blocks.length);
-		printf("Creando bloques...\n");
+		if(VERBOSE) printf("Creando bloques...\n");
 		t_inicio = clock();
 		createBlocks(blockLength,&qs_data);
 		t_final = clock();
-		printf("Bloques creados: %ld\n",qs_data.blocks.length);
+		if(VERBOSE) printf("Bloques creados: %ld\n",qs_data.blocks.length);
 		double segundos = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;
-		printf("tiempo de creacion de los bloques:%fs\n",segundos);	
+		if(VERBOSE) printf("tiempo de creacion de los bloques:%fs\n",segundos);	
 	}
 	
-	printf("Cribando...\n");
+	if(VERBOSE) printf("Cribando...\n");
 	double start_time = omp_get_wtime();
 
     // xmax define el rango de criba [-xmax..+xmax], tomado del intervalo del polinomio
@@ -317,10 +320,10 @@ int main(int argc, char **argv)
 
     double end_time = omp_get_wtime();
     double segundosCriba = end_time - start_time;
-    printf("xmax: %lu\n", xmax);
-    printf("tiempo de preparación de criba: %f segundos\n", segundosCriba);
+    if(VERBOSE) printf("xmax: %lu\n", xmax);
+    if(VERBOSE) printf("tiempo de preparación de criba: %f segundos\n", segundosCriba);
 
-	printf("Calculando Polinomio...\n");
+	if(VERBOSE) printf("Calculando Polinomio...\n");
 	t_inicio = clock();
 	crearMatrizNula(&qs_data);
 
@@ -388,26 +391,28 @@ int main(int argc, char **argv)
 		if (found_this > 0) {
 			/* Clasificar: full vs combined */
 			full_relations += found_this; /* ajustado abajo */
-			printf("Polinomio %ld: %lu candidatos criba → %ld B_suaves (total: %ld, parciales: %lu)\n",
-				polinomio_count, npos, found_this, qs_data.n_BSuaves, qs_data.partials.n);
-			fflush(stdout);
+			if(VERBOSE) {
+				printf("Polinomio %ld: %lu candidatos criba → %ld B_suaves (total: %ld, parciales: %lu)\n",
+					polinomio_count, npos, found_this, qs_data.n_BSuaves, qs_data.partials.n);
+				fflush(stdout);
+			}
 		}
 		prev_n_BSuaves = qs_data.n_BSuaves;
 	}
-	printf("Polinomios procesados: %ld\n", polinomio_count);
-	fflush(stdout);
-	printf("Numeros B_Suaves encontrados:%ld\n",qs_data.n_BSuaves);
-	printf("Parciales almacenadas sin emparejar: %lu\n", qs_data.partials.n);
-	if (qs_data.large_prime_bound2 > 0) {
+	if(VERBOSE) printf("Polinomios procesados: %ld\n", polinomio_count);
+	if(VERBOSE) fflush(stdout);
+	if(VERBOSE) printf("Numeros B_Suaves encontrados:%ld\n",qs_data.n_BSuaves);
+	if(VERBOSE) printf("Parciales almacenadas sin emparejar: %lu\n", qs_data.partials.n);
+	if (VERBOSE && qs_data.large_prime_bound2 > 0) {
 		printf("2LP: almacenadas=%lu, combinadas=%lu\n",
 			qs_data.n_dlp_stored, qs_data.n_dlp_combined);
 	}
 	t_final = clock();
 	double segundosPolinomio = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;
-	printf("tiempo de calculo del polinomio:%fs\n",segundosPolinomio);	
+	if(VERBOSE) printf("tiempo de calculo del polinomio:%fs\n",segundosPolinomio);	
 	
 	
-	printf("Escribiendo matriz...");
+	if(VERBOSE) printf("Escribiendo matriz...");
 	imprimirMatriz(qs_data.mat);
 
 	// Guardar roota en archivo para que mulPoli lo use
@@ -700,8 +705,8 @@ long generatePrimesBase(mpz_t n, long bound, prime * primes){
 
     mpz_clear(p);
     fclose(file);
-    gmp_printf("Primo mas grande en la base: %Zd\n", primes[contRes-1].value);
-    printf("Primos leidos del archivo: %ld, residuos cuadraticos: %ld de %ld requeridos\n",
+    if(VERBOSE) gmp_printf("Primo mas grande en la base: %Zd\n", primes[contRes-1].value);
+    if(VERBOSE) printf("Primos leidos del archivo: %ld, residuos cuadraticos: %ld de %ld requeridos\n",
            contPrimos, contRes, bound);
     return contRes;
 }
@@ -793,7 +798,7 @@ void parseArgs(int argc, char **argv, int *flagd, int *flagh, char **hdvalue, ch
 	int c;
 	opterr = 0;
 	
-	while ((c = getopt(argc, argv, "d:h:b:c:")) != -1){
+	while ((c = getopt(argc, argv, "d:h:b:c:v")) != -1){
 		switch(c){
 			case 'd':
 				if(*flagh == 1){
@@ -818,6 +823,9 @@ void parseArgs(int argc, char **argv, int *flagd, int *flagh, char **hdvalue, ch
 				break;
 			case 'c':
 				*cvalue = optarg;
+				break;
+			case 'v':
+				VERBOSE = 1;
 				break;
 			case '?':
 				if (strchr("h", optopt) != NULL)
@@ -846,10 +854,11 @@ void parseArgs(int argc, char **argv, int *flagd, int *flagh, char **hdvalue, ch
 }
 
 void usage(){
-	fprintf(stderr,"Uso: ./B_QSieve (-d | -h) <N> [-b <NBLOCKS>] [-c <NCORES>] \n");
+	fprintf(stderr,"Uso: ./B_QSieve (-d | -h) <N> [-b <NBLOCKS>] [-c <NCORES>] [-v]\n");
 	fprintf(stderr,"Opciones:\n");
 	fprintf(stderr,"-d	# Especifica que el numero N es decimal\n");
 	fprintf(stderr,"-h	# Especifica que el numero N es hexadecimal\n");
 	fprintf(stderr,"-b	# Al usar esta opcion se deben especificar el numero de Bloques\n");
-	fprintf(stderr,"-C	# Especifica el numero de procesadores logicos que se quieren usar\n");
+	fprintf(stderr,"-c	# Especifica el numero de procesadores logicos que se quieren usar\n");
+	fprintf(stderr,"-v	# Modo verbose: muestra el log detallado de ejecución\n");
 }

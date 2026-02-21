@@ -13,18 +13,40 @@ MATRIX_CW_BIN="matrix.cw.bin"
 
 def main():
     remove_temp_files()
-    if len(sys.argv) > 2 and sys.argv[1] == "-h":
-        num = int(sys.argv[2], 16)
-    elif len(sys.argv) > 2:
-        num = int(sys.argv[2])
 
-    args = ["./B_QSieve"] + sys.argv[1:]
+    # Detectar -v (verbose) y separarlo de los args que van a B_QSieve
+    verbose = "-v" in sys.argv
+    bqs_args = sys.argv[1:]  # pasar todos los args incluyendo -v a B_QSieve
+
+    # Parsear el número N de los argumentos
+    num = None
+    argv = sys.argv[1:]
+    i = 0
+    while i < len(argv):
+        if argv[i] == "-d" and i + 1 < len(argv):
+            num = int(argv[i + 1])
+            i += 2
+        elif argv[i] == "-h" and i + 1 < len(argv):
+            num = int(argv[i + 1], 16)
+            i += 2
+        else:
+            i += 1
+
+    if num is None:
+        print("Error: se requiere -d <N> o -h <N>", file=sys.stderr)
+        sys.exit(1)
+
+    args = ["./B_QSieve"] + bqs_args
 
     inicioBQS = time.time()
-    exit_status = subprocess.run(args).returncode
+    if verbose:
+        exit_status = subprocess.run(args).returncode
+    else:
+        exit_status = subprocess.run(args, stdout=subprocess.DEVNULL).returncode
     finBQS = time.time()
     tiempoBQS = finBQS - inicioBQS
-    print(f'\nCribado y construccion de matriz:{tiempoBQS}s, exit_status: {exit_status}')
+    if verbose:
+        print(f'\nCribado y construccion de matriz:{tiempoBQS}s, exit_status: {exit_status}')
     if exit_status != 0:
         remove_temp_files()
         sys.exit(1)
@@ -32,19 +54,24 @@ def main():
     ascii_to_binary_matrix("matrix.txt",MATRIX_BIN)
 
     inicioCado = time.time()
-    subprocess.run([PATH_BWC+"/mf_scan2",MATRIX_BIN])
+    _devnull = subprocess.DEVNULL if not verbose else None
+    subprocess.run([PATH_BWC+"/mf_scan2",MATRIX_BIN],
+                   stdout=_devnull, stderr=_devnull)
 
     if os.path.exists(PATH_TMP):
         shutil.rmtree(PATH_TMP)
 
     os.mkdir(PATH_TMP)
-    subprocess.run(["cp", MATRIX_BIN, MATRIX_RW_BIN, MATRIX_CW_BIN, PATH_TMP])
+    subprocess.run(["cp", MATRIX_BIN, MATRIX_RW_BIN, MATRIX_CW_BIN, PATH_TMP],
+                   stdout=_devnull, stderr=_devnull)
 
-    print("Solucionando Matriz...")
+    if verbose:
+        print("Solucionando Matriz...")
     subprocess.run([PATH_BWC+"/bwc.pl",
                     ":complete", "thr=2", "m=64", "n=64", "nullspace=left", "interval=100",
                     "matrix="+PATH_TMP+"/"+MATRIX_BIN, "wdir="+PATH_TMP, "interleaving=0"],
-                    stdout=open("outputbwc.txt", "w"))
+                    stdout=open("outputbwc.txt", "w"),
+                    stderr=_devnull)
 
     # CADO-NFS genera K.sols0-64.X.txt solo para el vector que es
     # nullspace válido (X puede ser 0 o 1). Buscar cuál existe.
@@ -57,33 +84,37 @@ def main():
         print("Error: no se encontró archivo K.sols*.txt en", PATH_TMP)
         remove_temp_files()
         sys.exit(1)
-    print(f"Archivo de solución: {ksol_file}")
+    if verbose:
+        print(f"Archivo de solución: {ksol_file}")
     subprocess.run(["cp", PATH_TMP + "/" + ksol_file, "./K.sols.txt"])
     hex_to_binary("K.sols.txt", "vec.txt")
     finCado = time.time()
     tiempoSolM = finCado-inicioCado
-    print(f'\nSolucion Matriz:{tiempoSolM}s')
+    if verbose:
+        print(f'\nSolucion Matriz:{tiempoSolM}s')
 
     inicioMcd = time.time()
-    process_polynomial(num)
+    process_polynomial(num, verbose)
 
     with open("salidap.txt") as f:
         print(f.read())
     finMcd = time.time()
 
     tiempomcd = finMcd - inicioMcd
-    print(f'\nBusqueda de solucion:{tiempomcd}s')
+    if verbose:
+        print(f'\nBusqueda de solucion:{tiempomcd}s')
     tiempof = tiempoBQS+tiempoSolM+tiempomcd
     print(f'Tiempo final:{tiempof}s')
 
     remove_temp_files()
 
 
-def process_polynomial(num):
+def process_polynomial(num, verbose=False):
     with open("vec.txt") as vec_file:
         filas = sum(1 for _ in vec_file)
 
-    print(filas)
+    if verbose:
+        print(filas)
 
     for i in range(1, 64):
         with open("polinomio.txt") as polinomio_file, open("vec.txt") as vec_file:
