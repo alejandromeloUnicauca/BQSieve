@@ -135,7 +135,7 @@ def hex_to_binary(file_path, output_file):
                 out.write(bin_num_padded + "\n")
 
 def remove_temp_files():
-    files_to_remove = [MATRIX_BIN, MATRIX_RW_BIN, MATRIX_CW_BIN, "matrix.txt", "residuos.txt", "outputbwc.txt", "K.sols.txt", "salidap.txt", "vec.txt", "pos.txt", "salida.txt", "polinomio.txt", "roota.txt", "roota_list.txt"]
+    files_to_remove = [MATRIX_BIN, MATRIX_RW_BIN, MATRIX_CW_BIN, "matrix.txt", "residuos.txt", "outputbwc.txt", "K.sols.txt", "salidap.txt", "vec.txt", "pos.txt", "salida.txt", "polinomio.txt", "roota.txt", "roota_list.txt", "multiplier.txt"]
     [os.remove(file) for file in files_to_remove if os.path.exists(file)]
     if(os.path.exists(PATH_TMP)):
         shutil.rmtree(PATH_TMP)

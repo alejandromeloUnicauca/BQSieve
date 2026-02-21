@@ -26,6 +26,128 @@ void usage();
 //Cantidad de cores que se quieren usar para el cribado, 1 por defecto
 int CORES = 1;
 
+/*--------------------------------------------------------------------
+ * choose_multiplier — Multiplicador de Knuth-Schroeppel modificado
+ *
+ * Elige k (squarefree, pequeño) tal que k*N tenga la mayor cantidad
+ * de residuos cuadráticos entre primos pequeños → más B-smooth.
+ * Algoritmo adaptado de msieve v1.46 (Jason Papadopoulos, dominio público).
+ *--------------------------------------------------------------------*/
+#define NUM_TEST_PRIMES_KS 300
+
+static const unsigned int ks_mult_list[] = {
+    1, 2, 3, 5, 6, 7, 10, 11, 13, 14, 15, 17, 19,
+    21, 22, 23, 26, 29, 30, 31, 33, 34, 35, 37, 38,
+    39, 41, 42, 43, 46, 47, 51, 53, 55, 57, 58, 59,
+    61, 62, 65, 66, 67, 69, 70, 71, 73
+};
+#define NUM_KS_MULTS (sizeof(ks_mult_list)/sizeof(ks_mult_list[0]))
+
+static unsigned int choose_multiplier(mpz_t n, unsigned int fb_size) {
+    unsigned int i, j;
+    unsigned int num_primes;
+    double best_score;
+    unsigned int best_mult;
+    double scores[NUM_KS_MULTS];
+    unsigned int num_multipliers;
+
+    /* Usar min(2*fb_size, NUM_TEST_PRIMES_KS) primos para puntuar */
+    num_primes = 2 * fb_size;
+    if (num_primes > NUM_TEST_PRIMES_KS)
+        num_primes = NUM_TEST_PRIMES_KS;
+
+    /* Leer primos del archivo primes.txt */
+    FILE *fp = fopen("primes.txt", "r");
+    if (!fp) {
+        fprintf(stderr, "choose_multiplier: falta primes.txt\n");
+        return 1;
+    }
+
+    /* Leer hasta num_primes primos en un buffer */
+    unsigned long *test_primes = (unsigned long *)malloc(num_primes * sizeof(unsigned long));
+    unsigned int n_read = 0;
+    char buf[BUFSIZ];
+    while (n_read < num_primes && fgets(buf, BUFSIZ, fp) != NULL) {
+        char *ptr = buf;
+        while (*ptr && (*ptr == ' ' || *ptr == '\t' || *ptr == '\n')) ptr++;
+        if (*ptr == '\0') continue;
+        unsigned long p = strtoul(ptr, NULL, 10);
+        if (p >= 2) {
+            test_primes[n_read++] = p;
+        }
+    }
+    fclose(fp);
+    num_primes = n_read;
+
+    /* Paso 1: evaluar la contribución del primo 2 y penalizar por tamaño del multiplicador */
+    unsigned long n_mod_8 = mpz_fdiv_ui(n, 8);
+
+    double ln2 = log(2.0);
+
+    for (i = 0; i < NUM_KS_MULTS; i++) {
+        unsigned int curr_mult = ks_mult_list[i];
+        unsigned int knmod8 = (unsigned int)((curr_mult * n_mod_8) % 8);
+        double logmult = log((double)curr_mult);
+
+        /* Penalización: multiplicadores grandes hacen k*N más grande */
+        scores[i] = 0.5 * logmult;
+
+        /* Bonus por el primo 2 según k*N mod 8 */
+        switch (knmod8) {
+        case 1: scores[i] -= 2 * ln2; break;
+        case 5: scores[i] -= ln2; break;
+        case 3:
+        case 7: scores[i] -= 0.5 * ln2; break;
+        /* knmod8 par: no hay bonus (multiplicadores pares empiezan con desventaja) */
+        }
+    }
+    num_multipliers = NUM_KS_MULTS;
+
+    /* Paso 2: para cada primo p de test, evaluar contribución log(p)/(p-1) */
+    for (i = 1; i < num_primes; i++) {  /* empezar en 1 para saltar p=2 */
+        unsigned long prime = test_primes[i];
+        double contrib = log((double)prime) / (double)(prime - 1);
+        unsigned long n_mod_p = mpz_fdiv_ui(n, prime);
+
+        for (j = 0; j < num_multipliers; j++) {
+            unsigned int curr_mult = ks_mult_list[j];
+            unsigned long kn_mod_p = (n_mod_p * (curr_mult % prime)) % prime;
+
+            /* Si k*N es residuo cuadrático mod prime (o prime | k*N) */
+            if (kn_mod_p == 0) {
+                /* prime divide k*N → solo una raíz */
+                scores[j] -= contrib;
+            } else {
+                /* Legendre symbol: kn_mod_p^((p-1)/2) mod p */
+                mpz_t tmp_kn, tmp_p;
+                mpz_inits(tmp_kn, tmp_p, NULL);
+                mpz_set_ui(tmp_kn, kn_mod_p);
+                mpz_set_ui(tmp_p, prime);
+                int leg = mpz_legendre(tmp_kn, tmp_p);
+                mpz_clears(tmp_kn, tmp_p, NULL);
+
+                if (leg == 1) {
+                    /* Dos raíces → doble contribución */
+                    scores[j] -= 2.0 * contrib;
+                }
+            }
+        }
+    }
+
+    free(test_primes);
+
+    /* Paso 3: elegir el multiplicador con mejor score (más negativo = mejor) */
+    best_score = 1000.0;
+    best_mult = 1;
+    for (i = 0; i < num_multipliers; i++) {
+        if (scores[i] < best_score) {
+            best_score = scores[i];
+            best_mult = ks_mult_list[i];
+        }
+    }
+    return best_mult;
+}
+
 int main(int argc, char **argv)
 {
 	int flagd = 0; 
@@ -67,6 +189,7 @@ int main(int argc, char **argv)
 	qs_data.partials.n = 0;
 	qs_data.partials.capacity = 0;
 	qs_data.large_prime_bound = 0;
+	qs_data.multiplier = 1;
 	mpz_inits(qs_data.n,qs_data.intervalo.length,NULL);
 	if(bvalue!=NULL)qs_data.blocks.length = atol(bvalue);
 	else qs_data.blocks.length = 0;
@@ -102,12 +225,21 @@ int main(int argc, char **argv)
 
 	printf("Cores:%d\n",CORES);
 	
-	//Obtener parámetros de criba interpolados según el tamaño de N
+	//Obtener parámetros de criba interpolados según el tamaño de N (antes de multiplicar por k)
 	getSieveParams(qs_data.n, &qs_data.sieve_params);
 	qs_data.base.length = qs_data.sieve_params.fb_size;
 	printf("Parámetros de criba: bits=%u, fb_size=%u, sieve_size=%u, large_mult=%u\n",
 		qs_data.sieve_params.bits, qs_data.sieve_params.fb_size,
 		qs_data.sieve_params.sieve_size, qs_data.sieve_params.large_mult);
+
+	// Elegir multiplicador Knuth-Schroeppel
+	qs_data.multiplier = choose_multiplier(qs_data.n, qs_data.sieve_params.fb_size);
+	printf("Multiplicador Knuth-Schroeppel: k=%u\n", qs_data.multiplier);
+	if (qs_data.multiplier > 1) {
+		mpz_mul_ui(qs_data.n, qs_data.n, qs_data.multiplier);
+		gmp_printf("kN:%Zd\n", qs_data.n);
+	}
+
 	printf("Longitud de la base de primos:%ld\n", qs_data.base.length);
 	
 	//Generar base de primos
@@ -257,6 +389,15 @@ int main(int argc, char **argv)
 		mpz_out_str(fr, 10, qs_data.roota);
 		fprintf(fr, "\n");
 		fclose(fr);
+	}
+
+	// Guardar multiplicador para que mulPoli divida los factores espúreos
+	if (qs_data.multiplier > 1) {
+		FILE *fm = fopen("multiplier.txt", "w");
+		if (fm) {
+			fprintf(fm, "%u\n", qs_data.multiplier);
+			fclose(fm);
+		}
 	}
 	
 	//Liberar Memoria

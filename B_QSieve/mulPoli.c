@@ -138,8 +138,38 @@ int main(int argc, char * argv[]){
 		
 		mpz_t p, q;
 		mpz_inits(p,q,NULL);
-		
+
+		/* Leer multiplicador Knuth-Schroeppel (si existe) y
+		   eliminar sus factores de p y q, ya que factorizamos kN */
+		unsigned long ks_mult = 1;
+		{
+			FILE *fmult = fopen("multiplier.txt", "r");
+			if (fmult) {
+				char mbuf[64];
+				if (fgets(mbuf, sizeof(mbuf), fmult))
+					ks_mult = strtoul(mbuf, NULL, 10);
+				fclose(fmult);
+			}
+		}
+
 		mpz_set(p,gcd);
+
+		/* Eliminar factores del multiplicador de p */
+		if (ks_mult > 1) {
+			mpz_t g_tmp;
+			mpz_init(g_tmp);
+			mpz_gcd_ui(g_tmp, p, ks_mult);
+			while (mpz_cmp_ui(g_tmp, 1) > 0) {
+				mpz_divexact(p, p, g_tmp);
+				mpz_gcd_ui(g_tmp, p, ks_mult);
+			}
+			mpz_clear(g_tmp);
+			/* Si p quedó como 1, este vector no sirve */
+			if (mpz_cmp_ui(p, 1) == 0) {
+				mpz_clears(p,q,NULL);
+				goto next_vector;
+			}
+		}
 		
 		/*printf("p:");
 		mpz_out_str(stdout,10,gcd);
@@ -154,17 +184,30 @@ int main(int argc, char * argv[]){
 		mpz_gcd(gcd,res,n);
 		
 		mpz_set(q,gcd);
-		
-		/*printf("q:");
-		mpz_out_str(stdout,10,gcd);
-		printf("\n\n");*/
+
+		/* Eliminar factores del multiplicador de q */
+		if (ks_mult > 1) {
+			mpz_t g_tmp;
+			mpz_init(g_tmp);
+			mpz_gcd_ui(g_tmp, q, ks_mult);
+			while (mpz_cmp_ui(g_tmp, 1) > 0) {
+				mpz_divexact(q, q, g_tmp);
+				mpz_gcd_ui(g_tmp, q, ks_mult);
+			}
+			mpz_clear(g_tmp);
+			if (mpz_cmp_ui(q, 1) == 0) {
+				mpz_clears(p,q,NULL);
+				goto next_vector;
+			}
+		}
 		
 		if(mpz_cmp_ui(p,1)!=0 && mpz_cmp_ui(q,1)!=0){
 			gmp_printf("P:%Zd \nQ:%Zd\n",p,q);
 			mpz_clears(p,q,NULL);
 			exit(EXIT_SUCCESS);
 		}
-		
+
+next_vector:
 		mpz_clear(mulX);
 		mpz_clear(sqr);
 		mpz_clear(gcd);
@@ -179,5 +222,3 @@ int main(int argc, char * argv[]){
 	mpz_clear(n);
 	exit(EXIT_FAILURE);
 }
-
-

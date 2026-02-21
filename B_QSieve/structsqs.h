@@ -186,6 +186,8 @@ typedef struct{
 	unsigned long large_prime_bound;
 	/** parámetros de criba interpolados para este N */
 	sieve_param_t sieve_params;
+	/** multiplicador Knuth-Schroeppel (k tal que factorizamos k*N) */
+	unsigned int multiplier;
 }qs_struct;
 
 //divisiones sucesivas
