@@ -1,6 +1,8 @@
 #ifndef STRUCTSQS_H
 #define STRUCTSQS_H
 
+#include <stdint.h>
+
 /**
  * @file
  * @author Jhon Alejandro Melo<alejandromelo@unicauca.edu.co>
@@ -40,6 +42,12 @@ typedef struct{
 	mpz_t value;
 	mpfr_t log_value;
 	unsigned long llog_value;
+	/* Campos nativos precomputados para la criba uint8 */
+	uint32_t p;          /* primo como entero nativo */
+	uint8_t logp;        /* round(log2(p)) */
+	uint32_t root1;      /* raíz de criba 1 para el polinomio actual */
+	uint32_t root2;      /* raíz de criba 2 para el polinomio actual */
+	uint32_t sqrt_n_mod_p; /* sqrt(N) mod p, precomputado */
 }prime;
 
  /**

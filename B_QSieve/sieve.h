@@ -9,11 +9,23 @@
 int shanksTonelli(mpz_t n, mpz_t p, mpz_t r1, mpz_t r2);
 
 /**
- * @brief Criba logarítmica para un polinomio MPQS.
+ * @brief Precomputa sqrt(N) mod p y campos nativos para cada primo de la base.
+ * Se llama UNA VEZ tras generar la base de primos.
+ */
+void sieve_precompute_roots(qs_struct *qs_data);
+
+/**
+ * @brief Calcula raíces de criba para el polinomio actual.
+ * Se llama cada vez que se genera un nuevo polinomio.
+ */
+void sieve_compute_roots(qs_struct *qs_data, unsigned long sieve_interval);
+
+/**
+ * @brief Criba logarítmica uint8 en bloques de 32KB (cache-friendly).
  * Calcula las raíces de criba para Q(x)=a*x²+2*b*x+c y acumula log(p)
- * en un array. Devuelve los índices que superan el umbral T.
+ * en bloques de uint8. Devuelve los índices que superan el umbral.
  *
- * @param qs_data   Estructura con la base de primos y polinomio MPQS actual
+ * @param qs_data   Estructura con la base de primos y polinomio actual
  * @param xmax      Mitad del intervalo de criba (se criba [-xmax..xmax])
  * @param out_indices  Array de salida con las posiciones x que pasan la criba
  * @param out_count    Número de candidatos encontrados

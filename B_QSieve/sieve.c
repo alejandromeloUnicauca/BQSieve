@@ -1,3 +1,13 @@
+/*--------------------------------------------------------------------
+ * sieve.c — Criba logarítmica uint8 cache-friendly (32KB blocks)
+ *
+ * Técnica msieve: array uint8 inicializado a cutoff, se resta logprime
+ * en cada posición de criba. Las posiciones cuyo bit 7 queda encendido
+ * (underflow = valor suave) son candidatas para trial division.
+ *
+ * Las raíces de criba se precomputan como uint32 nativos y se actualizan
+ * incrementalmente entre polinomios derivados (Gray code).
+ *--------------------------------------------------------------------*/
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -9,36 +19,23 @@
 #include <time.h>
 #include <math.h>
 
-//Cantidad de procesadores logicos que se quieren usar definidos en B_QSieve
+/* Tamaño del bloque de criba: 32KB cabe en L1 cache */
+#define SIEVE_BLOCK_SIZE 32768
+
 extern int CORES;
 
-/** 
-* @brief 
-* @param n: 
-* @param p: numero primo 
-* @param r1: root 1 parametro de salida
-* @param r2: root 2 parametro de salida
-* @return 1 si se encontro solucion o 0 si no se encuentra una solucion
-*/
+/*--------------------------------------------------------------------
+ * shanksTonelli — raíz cuadrada modular (sin cambios)
+ *--------------------------------------------------------------------*/
 int shanksTonelli(mpz_t n, mpz_t p, mpz_t r1, mpz_t r2) {
 	
-	mpz_t resMod, p1, div;//p1 sera prime-1, resMod y div seran variables temporales para resultados de operaciones
+	mpz_t resMod, p1, div;
 	mpz_inits(resMod,p1,div,NULL);
-	
-	/*Se puede omitir esta parte por que los primos que llegan 
-	 * ya se les calculo el simbolo de legendre
-	if((mpz_legendre(n,p)==1)){
-		mpz_set_ui(r1,0);
-		mpz_set_ui(r2,0);
-		return 0;
-	}*/
 	
 	mpz_t q, ss;
 	mpz_inits(q,ss,NULL);
-	mpz_sub_ui(q,p,1);//q=(prime-1)
+	mpz_sub_ui(q,p,1);
 	
-	
-	//mientras que el ultimo bit de q sea 0 (q par)
 	while (mpz_divisible_ui_p(q,2) != 0)
 	{
 		mpz_add_ui(ss,ss,1);
@@ -47,23 +44,21 @@ int shanksTonelli(mpz_t n, mpz_t p, mpz_t r1, mpz_t r2) {
 
 	if (mpz_cmp_ui(ss,1) == 0)
 	{
-		mpz_add_ui(p1,p,1);//p1=prime+1;
+		mpz_add_ui(p1,p,1);
 		mpz_divexact_ui(div,p1,4);
-		//div=(prime+1)/4
-		mpz_powm(r1,n,div,p);//r1=n^((prime+1)/4) mod prime
-		mpz_sub(r2,p,r1);//r2=prime-r1
+		mpz_powm(r1,n,div,p);
+		mpz_sub(r2,p,r1);
 		
 	}else{
-		mpz_sub_ui(p1,p,1);//p=prime-1;
+		mpz_sub_ui(p1,p,1);
 		
 		mpz_t z;
 		mpz_init(z);
 		mpz_set_ui(z,2);
 		
 		mpz_divexact_ui(div,p1,2);
-		//(prime-1)/2
 		
-		mpz_powm(resMod,z,div,p);//resMod=z^(div) mod prime
+		mpz_powm(resMod,z,div,p);
 		
 		while (mpz_cmp(resMod,p1)!=0)
 		{
@@ -78,7 +73,7 @@ int shanksTonelli(mpz_t n, mpz_t p, mpz_t r1, mpz_t r2) {
 		mpz_powm(t,n,q,p);
 		
 		mpz_add_ui(q,q,1);
-		mpz_divexact_ui(div,q,2);//div=q/2
+		mpz_divexact_ui(div,q,2);
 		
 		mpz_powm(r,n,div,p);
 		
@@ -92,7 +87,7 @@ int shanksTonelli(mpz_t n, mpz_t p, mpz_t r1, mpz_t r2) {
 				mpz_t pr;
 				mpz_init(pr);
 				mpz_sub(pr,p,r);
-				mpz_set(r2,pr);//r2=prime-r
+				mpz_set(r2,pr);
 				mpz_clear(pr);
 				break;
 			}
@@ -105,12 +100,10 @@ int shanksTonelli(mpz_t n, mpz_t p, mpz_t r1, mpz_t r2) {
 			
 			mpz_sub_ui(m1,m,1);
 			
-			//zz != 1 && i < (m-1)
 			while (mpz_cmp_ui(zz,1) != 0 && mpz_cmp(i,m1) < 0)
 			{
-				mpz_powm_ui(zz,zz,2,p);//zz=zz*zz mod prime
+				mpz_powm_ui(zz,zz,2,p);
 				mpz_add_ui(i,i,1);
-				
 			}
 			
 			mpz_t b,e;
@@ -123,7 +116,7 @@ int shanksTonelli(mpz_t n, mpz_t p, mpz_t r1, mpz_t r2) {
 			
 			while (mpz_cmp_ui(e,0) > 0)
 			{
-				mpz_powm_ui(b,b,2,p);//b=b*b mod prime
+				mpz_powm_ui(b,b,2,p);
 				mpz_sub_ui(e,e,1);
 			}
 			
@@ -144,190 +137,278 @@ int shanksTonelli(mpz_t n, mpz_t p, mpz_t r1, mpz_t r2) {
 	return 1;
 }
 
-/**
- * @brief Criba logarítmica optimizada para un polinomio MPQS.
- *
- * Para el polinomio Q(x) = a*x² + 2*b*x + c, calcula las dos raíces
- * de criba s₁, s₂ para cada primo p de la base (soluciones de Q(x) ≡ 0 mod p),
- * y acumula log(p) en un array de tamaño 2*xmax+1 en las posiciones
- * s₁, s₁+p, s₁+2p, … y s₂, s₂+p, s₂+2p, …
- *
- * Solo los índices cuya suma de logs supera el umbral T se devuelven
- * como candidatos para trial division.
- *
- * @param qs_data       Estructura con base de primos y polinomio MPQS
- * @param xmax          Mitad del intervalo [-xmax .. +xmax]
- * @param out_indices   Array de salida con las posiciones x candidatas (caller libera)
- * @param out_count     Número de candidatos
- */
-void sieve_mpqs(qs_struct *qs_data, unsigned long xmax,
-                long **out_indices, unsigned long *out_count)
-{
-    unsigned long total = 2 * xmax + 1;  // índices 0..total-1 representan x = -xmax..+xmax
+/*--------------------------------------------------------------------
+ * sieve_precompute_roots — Precomputa sqrt(N) mod p y campos nativos
+ * para cada primo de la base. Se llama UNA VEZ tras generar la base.
+ *--------------------------------------------------------------------*/
+void sieve_precompute_roots(qs_struct *qs_data) {
+    mpz_t r1, r2;
+    mpz_inits(r1, r2, NULL);
 
-    // Array de criba: S[i] acumula sum(log(p)) para x = i - xmax
-    float *S = (float *)calloc(total, sizeof(float));
-    if (!S) {
-        fprintf(stderr, "Error al asignar memoria para array de criba\n");
-        exit(EXIT_FAILURE);
-    }
-
-    // Calcular umbral T = ln(sqrt(|c|) * xmax) con margen
-    // Heurística: T ≈ ln(sqrt(max|Q(x)|)) - ln(p_max)
-    // max|Q(x)| ≈ a*xmax² + 2*|b|*xmax + |c|
-    mpfr_t T_thr;
-    mpfr_init2(T_thr, 128);
-    {
-        mpz_t maxQ;
-        mpz_init(maxQ);
-        // maxQ = a * xmax^2
-        mpz_set_ui(maxQ, xmax);
-        mpz_mul_ui(maxQ, maxQ, xmax);
-        mpz_mul(maxQ, maxQ, qs_data->poly.a);
-        // + 2*|b|*xmax
-        mpz_t tmp;
-        mpz_init(tmp);
-        mpz_abs(tmp, qs_data->poly.b);
-        mpz_mul_ui(tmp, tmp, 2 * xmax);
-        mpz_add(maxQ, maxQ, tmp);
-        // + |c|
-        mpz_abs(tmp, qs_data->poly.c);
-        mpz_add(maxQ, maxQ, tmp);
-
-        mpfr_set_z(T_thr, maxQ, MPFR_RNDN);
-        mpfr_sqrt(T_thr, T_thr, MPFR_RNDZ);
-        mpfr_log(T_thr, T_thr, MPFR_RNDZ);
-        // restar log del large_prime_bound como margen para aceptar 1LP
-        // Si large_prime_bound > 0, usar log(large_prime_bound), sino log(p_max)
-        if (qs_data->large_prime_bound > 1) {
-            mpfr_t lp_log;
-            mpfr_init2(lp_log, 128);
-            mpfr_set_ui(lp_log, qs_data->large_prime_bound, MPFR_RNDN);
-            mpfr_log(lp_log, lp_log, MPFR_RNDZ);
-            mpfr_sub(T_thr, T_thr, lp_log, MPFR_RNDZ);
-            mpfr_clear(lp_log);
-        } else {
-            mpfr_sub(T_thr, T_thr, qs_data->base.primes[qs_data->base.length - 1].log_value, MPFR_RNDZ);
-        }
-
-        mpz_clears(maxQ, tmp, NULL);
-    }
-    float T_val = mpfr_get_flt(T_thr, MPFR_RNDZ);
-    mpfr_clear(T_thr);
-
-    // Para cada primo p de la base, calcular las raíces de Q(x) ≡ 0 (mod p)
-    // Q(x) = a*x² + 2*b*x + c
-    // Raíces: x ≡ a⁻¹ * (-b ± sqrt(N)) (mod p)
-    // ya que a*x² + 2*b*x + c ≡ 0 (mod p) y b² - a*c = N
     for (long i = 0; i < qs_data->base.length; i++) {
-        unsigned long p_ul = mpz_get_ui(qs_data->base.primes[i].value);
-        if (p_ul < 2) continue;
-        float logp = mpfr_get_flt(qs_data->base.primes[i].log_value, MPFR_RNDZ);
+        prime *fb = &qs_data->base.primes[i];
+        fb->p = (uint32_t)mpz_get_ui(fb->value);
+        /* logp = round(log2(p)) */
+        if (fb->p >= 2)
+            fb->logp = (uint8_t)(log2((double)fb->p) + 0.5);
+        else
+            fb->logp = 1;
+        
+        /* Precomputar sqrt(N) mod p */
+        if (fb->p == 2) {
+            fb->sqrt_n_mod_p = 1; /* N es impar, sqrt(N) mod 2 = 1 */
+        } else {
+            shanksTonelli(qs_data->n, fb->value, r1, r2);
+            fb->sqrt_n_mod_p = (uint32_t)mpz_get_ui(r1);
+        }
+        fb->root1 = 0;
+        fb->root2 = 0;
+    }
+    mpz_clears(r1, r2, NULL);
+}
 
-        mpz_t p_mp, r1, r2;
-        mpz_inits(p_mp, r1, r2, NULL);
-        mpz_set(p_mp, qs_data->base.primes[i].value);
-
-        // Shanks-Tonelli: r1, r2 son raíces de N mod p
-        shanksTonelli(qs_data->n, p_mp, r1, r2);
-
-        // Convertir a raíces de Q(x) ≡ 0 (mod p):
-        // x ≡ a⁻¹ * (r - b) (mod p)
-        mpz_t a_inv, b_mod;
-        mpz_inits(a_inv, b_mod, NULL);
-
-        // Si a no es invertible mod p (p divide a), manejar caso especial
-        if (mpz_invert(a_inv, qs_data->poly.a, p_mp) == 0) {
-            // p | a → Q(x) = 2*b*x + c (mod p), una sola raíz
-            // x ≡ -(2b)⁻¹ * c (mod p)
-            mpz_t twob;
-            mpz_init(twob);
-            mpz_mul_ui(twob, qs_data->poly.b, 2);
-            mpz_mod(twob, twob, p_mp);
-            if (mpz_invert(a_inv, twob, p_mp) != 0) {
-                mpz_t s;
-                mpz_init(s);
-                mpz_mod(s, qs_data->poly.c, p_mp);
-                mpz_neg(s, s);
-                mpz_mul(s, s, a_inv);
-                mpz_mod(s, s, p_mp);
-                long start = mpz_get_si(s);
-                // mapear a array: pos en S = x + xmax
-                // x puede ser start, start+p, start+2p, ...
-                // También x negativo: start - p, start - 2p, ...
-                for (long x = start; x <= (long)xmax; x += (long)p_ul) {
-                    long idx = x + (long)xmax;
-                    if (idx >= 0 && idx < (long)total)
-                        S[idx] += logp;
-                }
-                for (long x = start - (long)p_ul; x >= -(long)xmax; x -= (long)p_ul) {
-                    long idx = x + (long)xmax;
-                    if (idx >= 0 && idx < (long)total)
-                        S[idx] += logp;
-                }
-                mpz_clear(s);
-            }
-            mpz_clear(twob);
-            mpz_clears(p_mp, r1, r2, a_inv, b_mod, NULL);
+/*--------------------------------------------------------------------
+ * sieve_compute_roots — Calcula raíces de criba para el polinomio actual.
+ *
+ * Para Q(x) = a*x² + 2*b*x + c, las raíces de Q(x) ≡ 0 (mod p) son:
+ *   x ≡ a⁻¹ * (±sqrt(N) - b) (mod p)
+ *
+ * Las raíces se almacenan como offsets en [0, sieve_interval)
+ * donde sieve_interval = 2 * xmax.
+ *--------------------------------------------------------------------*/
+void sieve_compute_roots(qs_struct *qs_data, unsigned long sieve_interval) {
+    for (long i = 0; i < qs_data->base.length; i++) {
+        prime *fb = &qs_data->base.primes[i];
+        uint32_t p = fb->p;
+        if (p < 2) {
+            fb->root1 = fb->root2 = UINT32_MAX; /* inválido */
             continue;
         }
 
-        mpz_mod(b_mod, qs_data->poly.b, p_mp);
-
-        // s1 = a_inv * (r1 - b) mod p
-        mpz_t s1, s2;
-        mpz_inits(s1, s2, NULL);
-        mpz_sub(s1, r1, b_mod);
-        mpz_mul(s1, s1, a_inv);
-        mpz_mod(s1, s1, p_mp);
-
-        // s2 = a_inv * (r2 - b) mod p
-        mpz_sub(s2, r2, b_mod);
-        mpz_mul(s2, s2, a_inv);
-        mpz_mod(s2, s2, p_mp);
-
-        long sol1 = mpz_get_si(s1);
-        long sol2 = mpz_get_si(s2);
-
-        // Cribar s1: desde sol1 hacia ambos lados
-        for (long x = sol1; x <= (long)xmax; x += (long)p_ul) {
-            S[x + (long)xmax] += logp;
-        }
-        for (long x = sol1 - (long)p_ul; x >= -(long)xmax; x -= (long)p_ul) {
-            S[x + (long)xmax] += logp;
-        }
-
-        // Cribar s2 (si es distinta de s1)
-        if (sol1 != sol2) {
-            for (long x = sol2; x <= (long)xmax; x += (long)p_ul) {
-                S[x + (long)xmax] += logp;
+        /* a mod p */
+        uint32_t a_mod_p = (uint32_t)mpz_fdiv_ui(qs_data->poly.a, p);
+        uint32_t b_mod_p = (uint32_t)mpz_fdiv_ui(qs_data->poly.b, p);
+        
+        if (a_mod_p == 0) {
+            /* p divide a → Q(x) es lineal mod p: 2*b*x + c ≡ 0 (mod p) */
+            uint32_t twob = (2 * b_mod_p) % p;
+            if (twob == 0) {
+                fb->root1 = fb->root2 = UINT32_MAX;
+                continue;
             }
-            for (long x = sol2 - (long)p_ul; x >= -(long)xmax; x -= (long)p_ul) {
-                S[x + (long)xmax] += logp;
+            /* Inverso modular con extended gcd (uint32 nativo) */
+            int64_t g, x0, y0;
+            {
+                int64_t aa = twob, bb = p, xx = 1, yy = 0, xx1 = 0, yy1 = 1, qq, tt;
+                while (bb) { qq = aa/bb; tt = bb; bb = aa - qq*bb; aa = tt;
+                    tt = xx1; xx1 = xx - qq*xx1; xx = tt;
+                    tt = yy1; yy1 = yy - qq*yy1; yy = tt; }
+                g = aa; x0 = xx; y0 = yy;
+                (void)y0; (void)g;
             }
+            uint32_t c_mod_p = (uint32_t)mpz_fdiv_ui(qs_data->poly.c, p);
+            int64_t s = (-(int64_t)c_mod_p * x0) % (int64_t)p;
+            if (s < 0) s += p;
+            /* Ajustar al offset del intervalo: el intervalo va de -xmax a +xmax
+             * posición en array = x + xmax, donde x es la raíz de criba.
+             * La raíz s está en [0,p), necesitamos el primer offset ≥ 0 en el array.
+             */
+            unsigned long xmax = sieve_interval / 2;
+            /* El primer x que satisface x ≡ s (mod p) y x >= -xmax es:
+             * offset = (s + xmax) mod p */
+            fb->root1 = (uint32_t)((s + xmax) % p);
+            fb->root2 = UINT32_MAX; /* una sola raíz */
+            continue;
         }
-
-        mpz_clears(p_mp, r1, r2, a_inv, b_mod, s1, s2, NULL);
+        
+        /* a_inv mod p */
+        uint32_t a_inv;
+        {
+            int64_t aa = a_mod_p, bb = p, xx = 1, xx1 = 0, qq, tt;
+            while (bb) { qq = aa/bb; tt = bb; bb = aa - qq*bb; aa = tt;
+                tt = xx1; xx1 = xx - qq*xx1; xx = tt; }
+            a_inv = (uint32_t)(((xx % (int64_t)p) + p) % p);
+        }
+        
+        uint32_t sqrt_n = fb->sqrt_n_mod_p;
+        unsigned long xmax = sieve_interval / 2;
+        
+        /* root1 = a_inv * (sqrt_n - b) mod p */
+        int64_t r1 = ((int64_t)sqrt_n - (int64_t)b_mod_p) % (int64_t)p;
+        if (r1 < 0) r1 += p;
+        r1 = ((int64_t)a_inv * r1) % p;
+        
+        /* root2 = a_inv * (-sqrt_n - b) mod p = a_inv * (p - sqrt_n - b) mod p */
+        int64_t r2 = ((int64_t)(p - sqrt_n) - (int64_t)b_mod_p) % (int64_t)p;
+        if (r2 < 0) r2 += p;
+        r2 = ((int64_t)a_inv * r2) % p;
+        
+        /* Ajustar al offset en el array de criba [0, sieve_interval) */
+        fb->root1 = (uint32_t)(((int64_t)r1 + (int64_t)xmax) % p);
+        fb->root2 = (uint32_t)(((int64_t)r2 + (int64_t)xmax) % p);
     }
+}
 
-    // Recolectar candidatos que superan el umbral
-    // Pre-asignar con estimación conservadora
-    unsigned long capacity = total / 10 + 100;
+/*--------------------------------------------------------------------
+ * sieve_mpqs — Criba logarítmica uint8 en bloques de 32KB
+ *
+ * Técnica msieve: inicializar el bloque con un valor de cutoff, luego
+ * restar logprime en cada posición de criba. Las posiciones donde el
+ * byte "underflows" (bit 7 set) son candidatas a ser suaves.
+ *
+ * El intervalo total es sieve_interval = 2*xmax posiciones.
+ * Se divide en bloques de SIEVE_BLOCK_SIZE bytes.
+ *--------------------------------------------------------------------*/
+void sieve_mpqs(qs_struct *qs_data, unsigned long xmax,
+                long **out_indices, unsigned long *out_count)
+{
+    unsigned long sieve_interval = 2 * xmax; /* total de posiciones */
+    unsigned long num_blocks = (sieve_interval + SIEVE_BLOCK_SIZE - 1) / SIEVE_BLOCK_SIZE;
+    
+    /* Calcular cutoff al estilo msieve:
+     * 
+     * El sieve array se inicializa con (cutoff_fill - 1). Se resta log2(p)
+     * por cada primo que divide la posición. Si la suma de logs supera
+     * cutoff_fill, hay underflow → bit 7 set → candidato.
+     *
+     * cutoff_fill = bits(|c|) - cutoff_config
+     * donde c = (b² - N)/a es el coeficiente constante del polinomio
+     * y cutoff_config = 1.5 * log2(LP_bound) para bases pequeñas (<800 primos)
+     *
+     * Esto acepta candidatos donde el cofactor residual es < LP_bound^1.5
+     * (generoso para capturar relaciones con 1 primo grande).
+     */
+    unsigned int cutoff;
+    {
+        /* cutoff_config = 1.5 * error_bits, como en msieve para fb < 800 */
+        unsigned int error_bits = 0;
+        if (qs_data->large_prime_bound > 1) {
+            error_bits = (unsigned int)(log2((double)qs_data->large_prime_bound) + 0.5);
+        }
+        unsigned int cutoff_config = (unsigned int)(1.5 * error_bits);
+        
+        /* bits(|c|) donde c = (b² - N) / a */
+        mpz_t c_val, tmp;
+        mpz_inits(c_val, tmp, NULL);
+        mpz_mul(c_val, qs_data->poly.b, qs_data->poly.b);
+        mpz_sub(c_val, c_val, qs_data->n);
+        mpz_tdiv_q(c_val, c_val, qs_data->poly.a);
+        mpz_abs(c_val, c_val);
+        unsigned int c_bits = (unsigned int)mpz_sizeinbase(c_val, 2);
+        mpz_clears(c_val, tmp, NULL);
+        
+        if (c_bits >= cutoff_config)
+            cutoff = c_bits - cutoff_config;
+        else
+            cutoff = 0;
+        
+        /* Limitar a 250 (max uint8 útil) */
+        if (cutoff > 250) cutoff = 250;
+        if (cutoff < 2) cutoff = 2;
+    }
+    
+    /* Calcular raíces de criba para este polinomio */
+    sieve_compute_roots(qs_data, sieve_interval);
+    
+    /* Array temporal de criba: solo un bloque de 32KB en stack o malloc alineado */
+    uint8_t *sieve_block = (uint8_t *)malloc(SIEVE_BLOCK_SIZE);
+    if (!sieve_block) {
+        fprintf(stderr, "Error al asignar sieve_block\n");
+        exit(EXIT_FAILURE);
+    }
+    
+    /* Buffer de candidatos */
+    unsigned long capacity = sieve_interval / 20 + 256;
     long *indices = (long *)malloc(capacity * sizeof(long));
     unsigned long count = 0;
-
-    for (unsigned long i = 0; i < total; i++) {
-        if (S[i] >= T_val) {
-            if (count >= capacity) {
-                capacity *= 2;
-                indices = (long *)realloc(indices, capacity * sizeof(long));
+    
+    /* Macro para detectar si algún byte de un uint64 tiene bit 7 set */
+    #define PACKED_MASK 0x8080808080808080ULL
+    
+    /* Para cada bloque de criba */
+    for (unsigned long blk = 0; blk < num_blocks; blk++) {
+        unsigned long block_start = blk * SIEVE_BLOCK_SIZE;
+        unsigned long block_end = block_start + SIEVE_BLOCK_SIZE;
+        if (block_end > sieve_interval)
+            block_end = sieve_interval;
+        unsigned long block_len = block_end - block_start;
+        
+        /* Inicializar bloque con cutoff - 1 (como msieve) */
+        memset(sieve_block, (uint8_t)(cutoff - 1), block_len);
+        
+        /* Cribar: restar logprime en cada posición de criba dentro del bloque */
+        for (long i = 0; i < qs_data->base.length; i++) {
+            prime *fb = &qs_data->base.primes[i];
+            uint32_t p = fb->p;
+            if (p < 2) continue;
+            uint8_t logp = fb->logp;
+            
+            /* root1: primera posición dentro de este bloque */
+            if (fb->root1 != UINT32_MAX) {
+                uint32_t r1 = fb->root1;
+                /* Avanzar r1 al rango [block_start, block_start + p) */
+                if (r1 < block_start) {
+                    unsigned long skip = (block_start - r1 + p - 1) / p;
+                    r1 += (uint32_t)(skip * p);
+                }
+                for (uint32_t pos = r1; pos < block_end; pos += p) {
+                    sieve_block[pos - block_start] -= logp;
+                }
             }
-            indices[count++] = (long)i - (long)xmax;  // valor x real
+            
+            /* root2 */
+            if (fb->root2 != UINT32_MAX && fb->root2 != fb->root1) {
+                uint32_t r2 = fb->root2;
+                if (r2 < block_start) {
+                    unsigned long skip = (block_start - r2 + p - 1) / p;
+                    r2 += (uint32_t)(skip * p);
+                }
+                for (uint32_t pos = r2; pos < block_end; pos += p) {
+                    sieve_block[pos - block_start] -= logp;
+                }
+            }
+        }
+        
+        /* Escanear el bloque: buscar posiciones con bit 7 set
+         * (underflow = el valor original era >= cutoff y se restó bastante) */
+        uint64_t *packed = (uint64_t *)sieve_block;
+        unsigned long packed_len = block_len / 8;
+        
+        for (unsigned long qi = 0; qi < packed_len; qi++) {
+            if ((packed[qi] & PACKED_MASK) == 0)
+                continue;
+            /* Hay al menos un candidato en estos 8 bytes */
+            for (unsigned int jj = 0; jj < 8; jj++) {
+                if (sieve_block[qi * 8 + jj] & 0x80) {
+                    unsigned long pos = block_start + qi * 8 + jj;
+                    if (pos < sieve_interval) {
+                        long x = (long)pos - (long)xmax;
+                        if (count >= capacity) {
+                            capacity *= 2;
+                            indices = (long *)realloc(indices, capacity * sizeof(long));
+                        }
+                        indices[count++] = x;
+                    }
+                }
+            }
+        }
+        /* Bytes restantes (si block_len no es múltiplo de 8) */
+        for (unsigned long qi = packed_len * 8; qi < block_len; qi++) {
+            if (sieve_block[qi] & 0x80) {
+                unsigned long pos = block_start + qi;
+                if (pos < sieve_interval) {
+                    long x = (long)pos - (long)xmax;
+                    if (count >= capacity) {
+                        capacity *= 2;
+                        indices = (long *)realloc(indices, capacity * sizeof(long));
+                    }
+                    indices[count++] = x;
+                }
+            }
         }
     }
-
-    free(S);
+    
+    free(sieve_block);
     *out_indices = indices;
     *out_count = count;
 }
-

@@ -125,6 +125,9 @@ int main(int argc, char **argv)
 	}
 	printf("Base de primos generada. %ld primos en la base\n",residuos);
 
+	// Precomputar raíces sqrt(N) mod p y campos nativos (uint32/uint8)
+	sieve_precompute_roots(&qs_data);
+
 	//Intervalo de criba: usar sieve_size de la tabla de parámetros
 	mpz_set_ui(qs_data.intervalo.length, qs_data.sieve_params.sieve_size);
 
