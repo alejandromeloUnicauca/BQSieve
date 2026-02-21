@@ -225,9 +225,9 @@ int main(int argc, char **argv)
 
 		polinomio_count++;
 		if (qs_data.blocks.length > 0) {
-			res = factoringBlocks(&qs_data, npos, 0);
+			res = factoringBlocks(&qs_data, npos, 0, xmax);
 		} else {
-			res = factoringTrial(&qs_data, npos, 0);
+			res = factoringTrial(&qs_data, npos, 0, xmax);
 		}
 		long found_this = qs_data.n_BSuaves - prev_n_BSuaves;
 		if (found_this > 0) {

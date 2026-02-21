@@ -3,10 +3,12 @@
 #include <string.h>
 #include <gmp.h>
 #include <mpfr.h>
+#include <math.h>
 #include "structsqs.h"
 
 /* Forward declarations */
 int trialDivision(mpz_t Qxi, qs_struct * qs_data, mpz_t Xi);
+int trialDivisionRecip(mpz_t Qxi, qs_struct *qs_data, mpz_t Xi, unsigned long sieve_offset);
 void insertarNumero(matrix * matriz, int posFila, int posColumna, int valor);
 
 /**
@@ -168,7 +170,7 @@ int blockDivision(mpz_t Qxi, qs_struct * qs_data){
  * @param posXi índice inicial
  * @return retorna 1 si aun faltan numeros B_suaves por verificar y 0 en caso de haberlos encontrado todos
  */
-int factoringBlocks(qs_struct * qs_data,  unsigned long endPos, unsigned long posXi){
+int factoringBlocks(qs_struct * qs_data,  unsigned long endPos, unsigned long posXi, unsigned long xmax){
 
 	FILE * fp;
 	if((fp = fopen("polinomio.txt","a")) == NULL){
@@ -206,8 +208,11 @@ int factoringBlocks(qs_struct * qs_data,  unsigned long endPos, unsigned long po
 				return 0;
 			}
 		} else {
-			/* blockDivision falló: intentar trialDivision para capturar 1LP */
-			int result = trialDivision(qs_data->intervalo.Qxi[i], qs_data, qs_data->intervalo.Xi[posXi]);
+			/* blockDivision falló: intentar trialDivisionRecip para capturar 1LP */
+			long x_val = mpz_get_si(qs_data->intervalo.Xi[posXi]);
+			unsigned long tf_offset = (unsigned long)((long)xmax + x_val);
+			int result = trialDivisionRecip(qs_data->intervalo.Qxi[i], qs_data,
+			                                qs_data->intervalo.Xi[posXi], tf_offset);
 			if(result == 1){
 				/* Full relation via trial */
 				qs_data->n_BSuaves++;
@@ -251,6 +256,208 @@ void agregarAVectorDiv(qs_struct * qs_data, data_divT * data_d){
 	{
 		insertarNumero(&qs_data->mat,qs_data->n_BSuaves,data_d[i].col+1,data_d[i].n_div%2);
 	}
+}
+
+/*--------------------------------------------------------------------
+ * trialDivisionRecip — Trial division usando recíprocos precomputados
+ *
+ * Test de divisibilidad: en vez de mpz_divisible_p (GMP genérico),
+ * usamos el sieve_offset y las raíces de criba para determinar si
+ * p divide Q(x). Si offset mod p == root1 o root2, entonces p | Q(x).
+ *
+ * El cálculo de offset mod p se hace con el recíproco precomputado:
+ *   q = (uint32)(((uint64)(offset + rcorrect) * recip) >> 32)
+ *   r = offset - q * p
+ * Esto reemplaza una operación de remainder (~30 ciclos) por una
+ * multiplicación + shift (~5 ciclos).
+ *
+ * Para la división real (cuando p sí divide), se usa mpz_tdiv_q_ui
+ * que es la operación nativa de GMP para dividir por un unsigned long
+ * (mucho más rápida que mpz_divexact con otro mpz_t).
+ *
+ * @param Qxi      Valor Q(x) a factorizar
+ * @param qs_data  Estructura con base de primos y tabla de parciales
+ * @param Xi       Valor x del candidato (para calcular lhs = a*x+b)
+ * @param sieve_offset  Posición en el array de criba = x + xmax
+ * @return 1 = full relation, 2 = combined partial, 0 = no relation
+ *--------------------------------------------------------------------*/
+int trialDivisionRecip(mpz_t Qxi, qs_struct *qs_data, mpz_t Xi,
+                       unsigned long sieve_offset)
+{
+    int *exp_vec = (int *)calloc(qs_data->base.length, sizeof(int));
+    mpz_t res;
+    mpz_init(res);
+    mpz_abs(res, Qxi);
+
+    int sign = (mpz_sgn(Qxi) < 0) ? 1 : 0;
+
+    /* Tratar p=2 por separado: simplemente eliminar factores de 2 */
+    if (qs_data->base.length > 0 && qs_data->base.primes[0].p == 2) {
+        unsigned long twos = 0;
+        while (mpz_even_p(res)) {
+            mpz_tdiv_q_2exp(res, res, 1);
+            twos++;
+        }
+        exp_vec[0] = (int)twos;
+    }
+
+    /* Para cada primo de la base (excepto p=2): test con recíproco */
+    long start_i = (qs_data->base.length > 0 && qs_data->base.primes[0].p == 2) ? 1 : 0;
+
+    for (long i = start_i; i < qs_data->base.length; i++) {
+        prime *fb = &qs_data->base.primes[i];
+        uint32_t p     = fb->p;
+        uint32_t root1 = fb->root1;
+        uint32_t root2 = fb->root2;
+        uint32_t recip = fb->recip;
+        uint32_t rcorr = fb->rcorrect;
+
+        if (root1 == UINT32_MAX) {
+            /* Raíz inválida (p | a): hacer mod directo con GMP */
+            if (mpz_divisible_ui_p(res, p)) {
+                unsigned long cnt = 0;
+                do {
+                    mpz_tdiv_q_ui(res, res, p);
+                    cnt++;
+                } while (mpz_divisible_ui_p(res, p));
+                exp_vec[i] = (int)cnt;
+            }
+            continue;
+        }
+
+        /* Test de divisibilidad con recíproco:
+         * q = (uint32)(((uint64)(sieve_offset + rcorr) * recip) >> 32)
+         * remainder = sieve_offset - q * p
+         * Si remainder == root1 o root2 → p divide Q(x) */
+        uint32_t q = (uint32_t)(((uint64_t)(sieve_offset + rcorr) *
+                                  (uint64_t)recip) >> 32);
+        uint32_t remainder = (uint32_t)sieve_offset - q * p;
+        
+        if (remainder == root1 || remainder == root2) {
+            /* p divide Q(x): hacer las divisiones sucesivas */
+            unsigned long cnt = 0;
+            do {
+                mpz_tdiv_q_ui(res, res, p);
+                cnt++;
+            } while (mpz_divisible_ui_p(res, p));
+            exp_vec[i] = (int)cnt;
+        }
+        /* else: p no divide Q(x), skip (~5 ciclos) */
+    }
+
+    /* ¿Quedó completamente factorizado? */
+    if (mpz_cmp_ui(res, 1) == 0) {
+        /* Full relation: insertar vector en la matriz */
+        if (sign)
+            insertarNumero(&qs_data->mat, qs_data->n_BSuaves, 0, 1);
+        for (long i = 0; i < qs_data->base.length; i++)
+            insertarNumero(&qs_data->mat, qs_data->n_BSuaves, i + 1, exp_vec[i] % 2);
+        add_a_factors_to_matrix(qs_data);
+        mpz_clear(res);
+        free(exp_vec);
+        return 1;
+    }
+
+    /* ¿Es un posible large prime? */
+    unsigned long residuo = 0;
+    if (mpz_fits_ulong_p(res))
+        residuo = mpz_get_ui(res);
+
+    if (residuo > 1 && residuo < qs_data->large_prime_bound &&
+        mpz_probab_prime_p(res, 15) > 0) {
+        /* Buscar si ya tenemos una parcial con el mismo large prime */
+        long match_idx = -1;
+        for (unsigned long k = 0; k < qs_data->partials.n; k++) {
+            if (qs_data->partials.entries[k].large_prime == residuo) {
+                match_idx = (long)k;
+                break;
+            }
+        }
+
+        if (match_idx >= 0) {
+            /* ¡Match! Combinar las dos parciales */
+            partial_entry *match = &qs_data->partials.entries[match_idx];
+
+            int combined_sign = (sign + match->sign) % 2;
+            if (combined_sign)
+                insertarNumero(&qs_data->mat, qs_data->n_BSuaves, 0, 1);
+            for (long i = 0; i < qs_data->base.length; i++) {
+                int combined_exp = (exp_vec[i] + match->exponents[i]) % 2;
+                insertarNumero(&qs_data->mat, qs_data->n_BSuaves, i + 1, combined_exp);
+            }
+            add_a_factors_to_matrix(qs_data);
+            for (unsigned int j = 0; j < match->num_a_factors; j++)
+                insertarNumero(&qs_data->mat, qs_data->n_BSuaves,
+                               (int)match->a_factor_fb_idx[j] + 1, 1);
+
+            /* Escribir relación combinada en polinomio.txt */
+            FILE *fp = fopen("polinomio.txt", "a");
+            if (fp) {
+                mpz_t combined_lhs, combined_Q, my_lhs, aQ1, aQ2;
+                mpz_inits(combined_lhs, combined_Q, my_lhs, aQ1, aQ2, NULL);
+                mpz_mul(my_lhs, qs_data->poly.a, Xi);
+                mpz_add(my_lhs, my_lhs, qs_data->poly.b);
+                mpz_mul(combined_lhs, my_lhs, match->lhs);
+                mpz_mul(aQ1, qs_data->poly.a, Qxi);
+                mpz_mul(aQ2, match->a_value, match->Qx);
+                mpz_mul(combined_Q, aQ1, aQ2);
+                mpz_out_str(fp, 10, combined_lhs);
+                fprintf(fp, ";");
+                mpz_out_str(fp, 10, combined_Q);
+                fprintf(fp, ";");
+                mpz_out_str(fp, 10, qs_data->roota);
+                fprintf(fp, ",");
+                mpz_out_str(fp, 10, match->roota);
+                fprintf(fp, "\n");
+                fflush(fp);
+                fclose(fp);
+                mpz_clears(combined_lhs, combined_Q, my_lhs, aQ1, aQ2, NULL);
+            }
+
+            /* Eliminar la parcial usada (swap con última) */
+            free(match->exponents);
+            mpz_clears(match->lhs, match->Qx, match->roota, match->a_value, NULL);
+            unsigned long last = qs_data->partials.n - 1;
+            if ((unsigned long)match_idx != last)
+                qs_data->partials.entries[match_idx] = qs_data->partials.entries[last];
+            qs_data->partials.n--;
+
+            mpz_clear(res);
+            free(exp_vec);
+            return 2;
+        } else {
+            /* No hay match: guardar esta parcial */
+            if (qs_data->partials.n >= qs_data->partials.capacity) {
+                unsigned long newcap = qs_data->partials.capacity == 0 ?
+                                       1024 : qs_data->partials.capacity * 2;
+                qs_data->partials.entries = realloc(qs_data->partials.entries,
+                                                    newcap * sizeof(partial_entry));
+                qs_data->partials.capacity = newcap;
+            }
+            unsigned long idx = qs_data->partials.n++;
+            partial_entry *e = &qs_data->partials.entries[idx];
+            e->large_prime = residuo;
+            e->exponents = exp_vec; /* transferir ownership */
+            e->sign = sign;
+            mpz_init(e->lhs);
+            mpz_mul(e->lhs, qs_data->poly.a, Xi);
+            mpz_add(e->lhs, e->lhs, qs_data->poly.b);
+            mpz_init_set(e->Qx, Qxi);
+            mpz_init_set(e->roota, qs_data->roota);
+            e->num_a_factors = qs_data->siqs_state.num_factors;
+            for (unsigned int j = 0; j < e->num_a_factors; j++)
+                e->a_factor_fb_idx[j] = qs_data->siqs_state.factor_fb_idx[j];
+            mpz_init_set(e->a_value, qs_data->poly.a);
+
+            mpz_clear(res);
+            /* NO free exp_vec, se transfirió a la parcial */
+            return 0;
+        }
+    }
+
+    mpz_clear(res);
+    free(exp_vec);
+    return 0;
 }
 
 
@@ -449,14 +656,15 @@ int trialDivision(mpz_t Qxi, qs_struct * qs_data, mpz_t Xi){
 }
 
 /**
- * @brief Factoriza el array Qxi con divisiones triviales, verifica si cada posicion es un numero bsuave
- * y lo agrega al archivo polinomio.txt
+ * @brief Factoriza el array Qxi con divisiones usando recíprocos,
+ * verifica si cada posicion es un numero bsuave y lo agrega al archivo polinomio.txt
  * @param qs_data estructura que contiene el array Qxi
  * @param endPos cantidad de candidatos
  * @param posXi índice inicial
+ * @param xmax mitad del intervalo de criba (para calcular sieve_offset)
  * @return retorna 1 si aun faltan numeros B_suaves por verificar y 0 en caso de haberlos encontrado todos
  */
-int factoringTrial(qs_struct * qs_data, unsigned long endPos, unsigned long posXi){
+int factoringTrial(qs_struct * qs_data, unsigned long endPos, unsigned long posXi, unsigned long xmax){
 	FILE * fp;
 	if((fp = fopen("polinomio.txt","a")) == NULL){
 		perror("fopen");
@@ -464,7 +672,10 @@ int factoringTrial(qs_struct * qs_data, unsigned long endPos, unsigned long posX
 	}
 	for (unsigned long i = 0; i < endPos; i++)
 	{
-		int result = trialDivision(qs_data->intervalo.Qxi[i], qs_data, qs_data->intervalo.Xi[posXi]);
+		long x_val = mpz_get_si(qs_data->intervalo.Xi[posXi]);
+		unsigned long tf_offset = (unsigned long)((long)xmax + x_val);
+		int result = trialDivisionRecip(qs_data->intervalo.Qxi[i], qs_data,
+		                                qs_data->intervalo.Xi[posXi], tf_offset);
 		if(result == 1){
 			/* Full relation encontrada — vector ya insertado por trialDivision */
 			qs_data->n_BSuaves++;

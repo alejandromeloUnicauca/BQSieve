@@ -48,6 +48,9 @@ typedef struct{
 	uint32_t root1;      /* raíz de criba 1 para el polinomio actual */
 	uint32_t root2;      /* raíz de criba 2 para el polinomio actual */
 	uint32_t sqrt_n_mod_p; /* sqrt(N) mod p, precomputado */
+	/* Recíproco precomputado para trial division sin operador % */
+	uint32_t recip;      /* ⌊2^32 / p⌋ o ⌊2^32 / p⌋+1 */
+	uint8_t  rcorrect;   /* 1 si recip es exacto, 0 si fue redondeado arriba */
 }prime;
 
  /**

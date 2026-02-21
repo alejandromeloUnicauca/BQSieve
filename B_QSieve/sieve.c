@@ -163,6 +163,27 @@ void sieve_precompute_roots(qs_struct *qs_data) {
         }
         fb->root1 = 0;
         fb->root2 = 0;
+        
+        /* Precomputar recíproco para trial division:
+         * recip = ⌊2^32 / p⌋ (o +1 si el truncamiento pierde precisión)
+         * Permite calcular (x % p) como: q = (uint32)((uint64)x * recip >> 32);
+         *                                 r = x - q * p;
+         * Ver Agner Fog, "Optimizing subroutines in assembly language" */
+        if (fb->p >= 2) {
+            uint64_t r64 = ((uint64_t)1 << 32) / (uint64_t)fb->p;
+            /* Verificar si el recíproco truncado es exacto */
+            double exact = 4294967296.0 / (double)fb->p;  /* 2^32 / p */
+            if (fabs(exact - (double)r64) < 0.5) {
+                fb->rcorrect = 1;  /* recip es exacto (o redondeado abajo) */
+                fb->recip = (uint32_t)r64;
+            } else {
+                fb->rcorrect = 0;  /* necesita +1 para corregir */
+                fb->recip = (uint32_t)(r64 + 1);
+            }
+        } else {
+            fb->recip = 0;
+            fb->rcorrect = 0;
+        }
     }
     mpz_clears(r1, r2, NULL);
 }
