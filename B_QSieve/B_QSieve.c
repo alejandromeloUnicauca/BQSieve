@@ -325,7 +325,9 @@ int main(int argc, char **argv)
 
 	if(VERBOSE) printf("Calculando Polinomio...\n");
 	t_inicio = clock();
+	double t_poly_wall0 = omp_get_wtime();
 	crearMatrizNula(&qs_data);
+	polinomio_open();
 
 	int res = 1;
 	qs_data.intervalo.Qxi = NULL;
@@ -333,15 +335,27 @@ int main(int argc, char **argv)
 	long polinomio_count = 0;
 	long prev_n_BSuaves = qs_data.n_BSuaves;
 	long full_relations = 0;
+
+	double t_gen = 0, t_sieve = 0, t_evalQ = 0, t_factor = 0;
+	long n_cand_total = 0;
+
 	while(res==1){
+		double _t0, _t1;
+
 		// MPQS: generar nuevo polinomio
+		_t0 = omp_get_wtime();
 		generate_mpqs_poly(&qs_data);
+		_t1 = omp_get_wtime();
+		t_gen += _t1 - _t0;
 
 		// === CRIBA LOGARÍTMICA ===
 		// Pre-filtrar candidatos con criba logarítmica antes de trial division
 		long *sieve_candidates = NULL;
 		unsigned long n_candidates = 0;
+		_t0 = omp_get_wtime();
 		sieve_mpqs(&qs_data, xmax, &sieve_candidates, &n_candidates);
+		_t1 = omp_get_wtime();
+		t_sieve += _t1 - _t0;
 
 		if (n_candidates == 0) {
 			free(sieve_candidates);
@@ -351,6 +365,7 @@ int main(int argc, char **argv)
 
 		// Construir Xi y Qxi solo para los candidatos de la criba
 		unsigned long npos = n_candidates;
+		n_cand_total += (long)npos;
 
 		// Liberar Xi y Qxi previos
 		if (qs_data.intervalo.Xi != NULL) {
@@ -372,21 +387,28 @@ int main(int argc, char **argv)
 		qs_data.intervalo.length_Xi = npos;
 		qs_data.intervalo.length_Qxi = npos;
 
+		_t0 = omp_get_wtime();
 		for (unsigned long i = 0; i < npos; i++) {
 			mpz_init(qs_data.intervalo.Xi[i]);
 			mpz_set_si(qs_data.intervalo.Xi[i], sieve_candidates[i]);
 			mpz_init(qs_data.intervalo.Qxi[i]);
 			eval_mpqs_Qx(&qs_data, qs_data.intervalo.Xi[i], qs_data.intervalo.Qxi[i]);
 		}
+		_t1 = omp_get_wtime();
+		t_evalQ += _t1 - _t0;
 
 		free(sieve_candidates);
 
 		polinomio_count++;
+		_t0 = omp_get_wtime();
 		if (qs_data.blocks.length > 0) {
 			res = factoringBlocks(&qs_data, npos, 0, xmax);
 		} else {
 			res = factoringTrial(&qs_data, npos, 0, xmax);
 		}
+		_t1 = omp_get_wtime();
+		t_factor += _t1 - _t0;
+
 		long found_this = qs_data.n_BSuaves - prev_n_BSuaves;
 		if (found_this > 0) {
 			/* Clasificar: full vs combined */
@@ -399,6 +421,7 @@ int main(int argc, char **argv)
 		}
 		prev_n_BSuaves = qs_data.n_BSuaves;
 	}
+	polinomio_close();
 	if(VERBOSE) printf("Polinomios procesados: %ld\n", polinomio_count);
 	if(VERBOSE) fflush(stdout);
 	if(VERBOSE) printf("Numeros B_Suaves encontrados:%ld\n",qs_data.n_BSuaves);
@@ -408,8 +431,23 @@ int main(int argc, char **argv)
 			qs_data.n_dlp_stored, qs_data.n_dlp_combined);
 	}
 	t_final = clock();
+	double t_poly_wall = omp_get_wtime() - t_poly_wall0;
 	double segundosPolinomio = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;
-	if(VERBOSE) printf("tiempo de calculo del polinomio:%fs\n",segundosPolinomio);	
+	if(VERBOSE) printf("tiempo de calculo del polinomio:%fs (CPU) | %fs (wall)\n",
+	                   segundosPolinomio, t_poly_wall);
+	if (VERBOSE && t_poly_wall > 0) {
+		double tw = t_poly_wall;
+		printf("  ├─ generate_poly: %.3fs (%5.1f%%)\n", t_gen,    100.0*t_gen/tw);
+		printf("  ├─ sieve_mpqs:    %.3fs (%5.1f%%)\n", t_sieve,  100.0*t_sieve/tw);
+		printf("  ├─ eval_Qx:       %.3fs (%5.1f%%) — %ld candidatos totales\n",
+		       t_evalQ, 100.0*t_evalQ/tw, n_cand_total);
+		printf("  └─ trial+combine: %.3fs (%5.1f%%)\n", t_factor, 100.0*t_factor/tw);
+		double sum = t_gen + t_sieve + t_evalQ + t_factor;
+		printf("  (suma sub-fases: %.3fs = %.1f%% del wall; overhead/otros: %.3fs)\n",
+		       sum, 100.0*sum/tw, tw - sum);
+		extern void print_factoring_stats(double total_wall);
+		print_factoring_stats(t_factor);
+	}
 	
 	
 	if(VERBOSE) printf("Escribiendo matriz...");

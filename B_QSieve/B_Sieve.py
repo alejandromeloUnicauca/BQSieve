@@ -79,36 +79,43 @@ def main():
 
 
 def process_polynomial(num, verbose=False):
-    with open("vec.txt") as vec_file:
-        filas = sum(1 for _ in vec_file)
+    with open("polinomio.txt") as f:
+        relations = []
+        for line in f:
+            parts = line.strip().split(";")
+            if len(parts) < 2:
+                continue
+            lhs = parts[0].strip()
+            qfile = parts[1].strip()
+            roota = parts[2].strip() if len(parts) > 2 else None
+            relations.append((lhs, qfile, roota))
+
+    with open("vec.txt") as f:
+        vecs = [line.rstrip("\n") for line in f]
 
     if verbose:
-        print(filas)
+        print(len(vecs))
+
+    n = min(len(relations), len(vecs))
 
     for i in range(1, 64):
-        with open("polinomio.txt") as polinomio_file, open("vec.txt") as vec_file:
-            for line_polinomio, line_vec in zip(polinomio_file, vec_file):
-                f2 = line_vec[i - 1]
-
-                if f2 == "1":
-                    parts = line_polinomio.strip().split(";")
-                    pos = parts[0].strip()
-                    f1 = parts[1].strip()
-                    rel_roota = parts[2].strip() if len(parts) > 2 else None
-
-                    with open("salida.txt", "a") as salida_file, \
-                         open("pos.txt", "a") as pos_file:
-                        salida_file.write(f1 + "\n")
-                        pos_file.write(pos + "\n")
-                    if rel_roota:
-                        with open("roota_list.txt", "a") as rl:
-                            rl.write(rel_roota + "\n")
-
-        if not os.path.exists("salida.txt"):
+        selected = [j for j in range(n) if len(vecs[j]) > i - 1 and vecs[j][i - 1] == "1"]
+        if not selected:
             continue
 
+        with open("salida.txt", "w") as fsal, open("pos.txt", "w") as fpos:
+            fsal.write("\n".join(relations[j][1] for j in selected) + "\n")
+            fpos.write("\n".join(relations[j][0] for j in selected) + "\n")
+
+        rootas = [relations[j][2] for j in selected if relations[j][2] is not None]
+        if rootas:
+            with open("roota_list.txt", "w") as frl:
+                frl.write("\n".join(rootas) + "\n")
+
         mulpoli_args = ["./mulPoli", str(num)]
-        exit_status = subprocess.run(mulpoli_args, stdout=open("salidap.txt", "a")).returncode
+        exit_status = subprocess.run(
+            mulpoli_args, stdout=open("salidap.txt", "a")
+        ).returncode
         if exit_status == 0:
             break
 

@@ -4,9 +4,80 @@
 #include <gmp.h>
 #include <mpfr.h>
 #include <math.h>
+#include <omp.h>
 #include "structsqs.h"
 
-/* Forward declarations */
+FILE *g_polinomio_fp = NULL;
+
+void polinomio_open(void) {
+    if (g_polinomio_fp == NULL) {
+        g_polinomio_fp = fopen("polinomio.txt", "w");
+        if (g_polinomio_fp == NULL) {
+            perror("fopen polinomio.txt");
+            exit(EXIT_FAILURE);
+        }
+    }
+}
+
+void polinomio_close(void) {
+    if (g_polinomio_fp != NULL) {
+        fclose(g_polinomio_fp);
+        g_polinomio_fp = NULL;
+    }
+}
+
+static double g_t_trialDiv_total = 0;
+static double g_t_calloc         = 0;
+static double g_t_recip_loop     = 0;
+static double g_t_gmp_div        = 0;
+static double g_t_prime_test     = 0;
+static double g_t_combine        = 0;
+static double g_t_pollard        = 0;
+static double g_t_insert_matrix  = 0;
+static double g_t_writeFullRel   = 0;
+static unsigned long g_n_calls       = 0;
+static unsigned long g_n_full        = 0;
+static unsigned long g_n_1lp_try     = 0;
+static unsigned long g_n_2lp_try     = 0;
+static unsigned long g_n_pollard_run = 0;
+static unsigned long g_n_writes      = 0;
+double get_writeFullRel_time(void) { return g_t_writeFullRel; }
+void   add_writeFullRel_time(double dt) {
+    #pragma omp atomic update
+    g_t_writeFullRel += dt;
+    #pragma omp atomic update
+    g_n_writes++;
+}
+
+void print_factoring_stats(double total_wall) {
+    if (total_wall <= 0) total_wall = 1e-9;
+    double sum_inst = g_t_calloc + g_t_recip_loop + g_t_gmp_div +
+                      g_t_prime_test + g_t_combine + g_t_pollard + g_t_insert_matrix;
+    double other_in_td = g_t_trialDiv_total - sum_inst;
+    if (other_in_td < 0) other_in_td = 0;
+    double outside_td = total_wall - g_t_trialDiv_total - g_t_writeFullRel;
+    if (outside_td < 0) outside_td = 0;
+    printf("\n  [trial+combine breakdown]\n");
+    printf("    candidatos procesados : %lu\n", g_n_calls);
+    printf("    full relations        : %lu  (writes polinomio.txt: %lu)\n", g_n_full, g_n_writes);
+    printf("    1LP candidatos        : %lu\n", g_n_1lp_try);
+    printf("    2LP candidatos        : %lu  (Pollard rho corrido %lu veces)\n",
+           g_n_2lp_try, g_n_pollard_run);
+    printf("    trialDivisionRecip total: %.3fs (%5.1f%%)\n", g_t_trialDiv_total, 100.0*g_t_trialDiv_total/total_wall);
+    printf("      ┌─ calloc exp_vec   : %.3fs (%5.1f%%)\n", g_t_calloc,        100.0*g_t_calloc/total_wall);
+    printf("      ├─ recip test loop  : %.3fs (%5.1f%%)\n", g_t_recip_loop,    100.0*g_t_recip_loop/total_wall);
+    printf("      ├─ mpz_tdiv_q_ui    : %.3fs (%5.1f%%)\n", g_t_gmp_div,       100.0*g_t_gmp_div/total_wall);
+    printf("      ├─ mpz_probab_prime : %.3fs (%5.1f%%)\n", g_t_prime_test,    100.0*g_t_prime_test/total_wall);
+    printf("      ├─ try_combine_part : %.3fs (%5.1f%%)\n", g_t_combine,       100.0*g_t_combine/total_wall);
+    printf("      ├─ Pollard rho      : %.3fs (%5.1f%%)\n", g_t_pollard,       100.0*g_t_pollard/total_wall);
+    printf("      ├─ insertarNumero(M): %.3fs (%5.1f%%)\n", g_t_insert_matrix, 100.0*g_t_insert_matrix/total_wall);
+    printf("      └─ otros (mpz_init/clear, mpz_abs, mpz_cmp, etc): %.3fs (%5.1f%%)\n",
+           other_in_td, 100.0*other_in_td/total_wall);
+    printf("    escritura polinomio.txt (full rels): %.3fs (%5.1f%%)\n", g_t_writeFullRel, 100.0*g_t_writeFullRel/total_wall);
+    printf("    fuera de trialDivisionRecip (loop overhead, etc): %.3fs (%5.1f%%)\n", outside_td, 100.0*outside_td/total_wall);
+    fflush(stdout);
+}
+
 int trialDivision(mpz_t Qxi, qs_struct * qs_data, mpz_t Xi);
 int trialDivisionRecip(mpz_t Qxi, qs_struct *qs_data, mpz_t Xi, unsigned long sieve_offset);
 void insertarNumero(matrix * matriz, int posFila, int posColumna, int valor);
@@ -176,13 +247,8 @@ int blockDivision(mpz_t Qxi, qs_struct * qs_data){
  * @return retorna 1 si aun faltan numeros B_suaves por verificar y 0 en caso de haberlos encontrado todos
  */
 int factoringBlocks(qs_struct * qs_data,  unsigned long endPos, unsigned long posXi, unsigned long xmax){
+	FILE *fp = g_polinomio_fp;
 
-	FILE * fp;
-	if((fp = fopen("polinomio.txt","a")) == NULL){
-		perror("fopen");
-		exit(EXIT_FAILURE);
-	}
-	
 	for (unsigned long i = 0; i < endPos; i++)
 	{
 		if(blockDivision(qs_data->intervalo.Qxi[i],qs_data)==1){
@@ -206,10 +272,8 @@ int factoringBlocks(qs_struct * qs_data,  unsigned long endPos, unsigned long po
 			fprintf(fp, ";");
 			mpz_out_str(fp, 10, qs_data->roota);
 			fprintf(fp, "\n");
-			fflush(fp);
 			mpz_clears(lhs, Qfile, NULL);
 			if(qs_data->n_BSuaves==qs_data->mat.n_rows){
-				fclose(fp);
 				return 0;
 			}
 		} else {
@@ -233,17 +297,14 @@ int factoringBlocks(qs_struct * qs_data,  unsigned long endPos, unsigned long po
 				fprintf(fp, ";");
 				mpz_out_str(fp, 10, qs_data->roota);
 				fprintf(fp, "\n");
-				fflush(fp);
 				mpz_clears(lhs, Qfile, NULL);
 				if(qs_data->n_BSuaves==qs_data->mat.n_rows){
-					fclose(fp);
 					return 0;
 				}
 			} else if(result == 2){
 				/* Combined partial — ya escrito por trialDivision */
 				qs_data->n_BSuaves++;
 				if(qs_data->n_BSuaves==qs_data->mat.n_rows){
-					fclose(fp);
 					return 0;
 				}
 			}
@@ -251,7 +312,6 @@ int factoringBlocks(qs_struct * qs_data,  unsigned long endPos, unsigned long po
 		}
 		posXi++;
 	}
-	fclose(fp); 
 	return 1;
 }
 
@@ -398,7 +458,7 @@ static int combine_two_partials(qs_struct *qs_data,
                        (int)match->a_factor_fb_idx[j] + 1, 1);
 
     /* Escribir relación combinada en polinomio.txt */
-    FILE *fp = fopen("polinomio.txt", "a");
+    FILE *fp = g_polinomio_fp;
     if (fp) {
         mpz_t combined_lhs, combined_Q, my_lhs, aQ1, aQ2;
         mpz_inits(combined_lhs, combined_Q, my_lhs, aQ1, aQ2, NULL);
@@ -416,8 +476,6 @@ static int combine_two_partials(qs_struct *qs_data,
         fprintf(fp, ",");
         mpz_out_str(fp, 10, match->roota);
         fprintf(fp, "\n");
-        fflush(fp);
-        fclose(fp);
         mpz_clears(combined_lhs, combined_Q, my_lhs, aQ1, aQ2, NULL);
     }
 
@@ -535,20 +593,34 @@ int try_combine_partial(qs_struct *qs_data, mpz_t Qxi, mpz_t Xi,
 int trialDivisionRecip(mpz_t Qxi, qs_struct *qs_data, mpz_t Xi,
                        unsigned long sieve_offset)
 {
+    double _ta, _tb, _td_acc = 0;
+    double _t_func0 = omp_get_wtime();
+
+    #pragma omp atomic update
+    g_n_calls++;
+
+    _ta = omp_get_wtime();
     int *exp_vec = (int *)calloc(qs_data->base.length, sizeof(int));
     mpz_t res;
     mpz_init(res);
     mpz_abs(res, Qxi);
+    _tb = omp_get_wtime();
+    #pragma omp atomic update
+    g_t_calloc += _tb - _ta;
 
     int sign = (mpz_sgn(Qxi) < 0) ? 1 : 0;
+
+    double _t_recip0 = omp_get_wtime();
 
     /* Tratar p=2 por separado: simplemente eliminar factores de 2 */
     if (qs_data->base.length > 0 && qs_data->base.primes[0].p == 2) {
         unsigned long twos = 0;
+        double _td0 = omp_get_wtime();
         while (mpz_even_p(res)) {
             mpz_tdiv_q_2exp(res, res, 1);
             twos++;
         }
+        _td_acc += omp_get_wtime() - _td0;
         exp_vec[0] = (int)twos;
     }
 
@@ -567,10 +639,12 @@ int trialDivisionRecip(mpz_t Qxi, qs_struct *qs_data, mpz_t Xi,
             /* Raíz inválida (p | a): hacer mod directo con GMP */
             if (mpz_divisible_ui_p(res, p)) {
                 unsigned long cnt = 0;
+                double _td0 = omp_get_wtime();
                 do {
                     mpz_tdiv_q_ui(res, res, p);
                     cnt++;
                 } while (mpz_divisible_ui_p(res, p));
+                _td_acc += omp_get_wtime() - _td0;
                 exp_vec[i] = (int)cnt;
             }
             continue;
@@ -583,29 +657,46 @@ int trialDivisionRecip(mpz_t Qxi, qs_struct *qs_data, mpz_t Xi,
         uint32_t q = (uint32_t)(((uint64_t)(sieve_offset + rcorr) *
                                   (uint64_t)recip) >> 32);
         uint32_t remainder = (uint32_t)sieve_offset - q * p;
-        
+
         if (remainder == root1 || remainder == root2) {
             /* p divide Q(x): hacer las divisiones sucesivas */
             unsigned long cnt = 0;
+            double _td0 = omp_get_wtime();
             do {
                 mpz_tdiv_q_ui(res, res, p);
                 cnt++;
             } while (mpz_divisible_ui_p(res, p));
+            _td_acc += omp_get_wtime() - _td0;
             exp_vec[i] = (int)cnt;
         }
         /* else: p no divide Q(x), skip (~5 ciclos) */
     }
 
+    double _t_recip_total = omp_get_wtime() - _t_recip0;
+    /* recip_loop excluye el tiempo de mpz_tdiv_q_ui, ya contabilizado en g_t_gmp_div */
+    #pragma omp atomic update
+    g_t_recip_loop += _t_recip_total - _td_acc;
+    #pragma omp atomic update
+    g_t_gmp_div    += _td_acc;
+
     /* ¿Quedó completamente factorizado? */
     if (mpz_cmp_ui(res, 1) == 0) {
         /* Full relation: insertar vector en la matriz */
+        double _ti0 = omp_get_wtime();
         if (sign)
             insertarNumero(&qs_data->mat, qs_data->n_BSuaves, 0, 1);
         for (long i = 0; i < qs_data->base.length; i++)
             insertarNumero(&qs_data->mat, qs_data->n_BSuaves, i + 1, exp_vec[i] % 2);
         add_a_factors_to_matrix(qs_data);
+        double _ti1 = omp_get_wtime();
+        #pragma omp atomic update
+        g_t_insert_matrix += _ti1 - _ti0;
+        #pragma omp atomic update
+        g_n_full++;
         mpz_clear(res);
         free(exp_vec);
+        #pragma omp atomic update
+        g_t_trialDiv_total += omp_get_wtime() - _t_func0;
         return 1;
     }
 
@@ -614,29 +705,34 @@ int trialDivisionRecip(mpz_t Qxi, qs_struct *qs_data, mpz_t Xi,
     if (mpz_fits_ulong_p(res))
         residuo = mpz_get_ui(res);
 
-    if (residuo > 1 && residuo < qs_data->large_prime_bound &&
-        mpz_probab_prime_p(res, 15) > 0) {
+    int is_prime_1lp = 0;
+    if (residuo > 1 && residuo < qs_data->large_prime_bound) {
+        double _tp0 = omp_get_wtime();
+        is_prime_1lp = (mpz_probab_prime_p(res, 15) > 0);
+        double _tp1 = omp_get_wtime();
+        #pragma omp atomic update
+        g_t_prime_test += _tp1 - _tp0;
+    }
+    if (is_prime_1lp) {
+        #pragma omp atomic update
+        g_n_1lp_try++;
+        double _tc0 = omp_get_wtime();
         int rc = try_combine_partial(qs_data, Qxi, Xi, exp_vec, sign,
                                      residuo, 0);
+        double _tc1 = omp_get_wtime();
+        #pragma omp atomic update
+        g_t_combine += _tc1 - _tc0;
         mpz_clear(res);
         if (rc == 2) { free(exp_vec); }
         /* rc==0: exp_vec transferido a la parcial */
+        #pragma omp atomic update
+        g_t_trialDiv_total += omp_get_wtime() - _t_func0;
         return rc;
     }
 
-    /* ¿Es un posible double large prime (2LP)?
-     * Condiciones (estilo msieve):
-     *  - 2LP habilitado (large_prime_bound2 > 0)
-     *  - cofactor > max_fb2 (si es menor, sería un primo => ya se habría capturado arriba)
-     *  - cofactor <= large_prime_bound2
-     *  - cofactor es compuesto (test base-2)
-     *  - se puede factorizar con Pollard-rho en GMP
-     *  - ambos factores < large_prime_bound
-     */
     if (qs_data->large_prime_bound2 > 0 && mpz_cmp_ui(res, 1) > 0) {
         unsigned long long res_ull = 0;
         if (mpz_sizeinbase(res, 2) <= 64) {
-            /* Extraer como uint64 */
             if (mpz_fits_ulong_p(res)) {
                 res_ull = mpz_get_ui(res);
             } else {
@@ -655,19 +751,33 @@ int trialDivisionRecip(mpz_t Qxi, qs_struct *qs_data, mpz_t Xi,
             res_ull <= qs_data->large_prime_bound2 &&
             mpz_probab_prime_p(res, 1) == 0) {
             /* Compuesto: intentar factorizar con Pollard-rho de GMP */
+            #pragma omp atomic update
+            g_n_2lp_try++;
+            #pragma omp atomic update
+            g_n_pollard_run++;
             unsigned long f1 = 0, f2 = 0;
+            double _tp0 = omp_get_wtime();
             int found = factor_cofactor_pollard(res, qs_data->large_prime_bound, &f1, &f2);
+            double _tp1 = omp_get_wtime();
+            #pragma omp atomic update
+            g_t_pollard += _tp1 - _tp0;
             if (found && f1 > 1 && f2 > 1 &&
                 f1 < qs_data->large_prime_bound &&
                 f2 < qs_data->large_prime_bound) {
                 /* ¡2LP encontrada! Ordenar: f1 <= f2 */
                 if (f1 > f2) { unsigned long tmp = f1; f1 = f2; f2 = tmp; }
+                double _tc0 = omp_get_wtime();
                 int rc = try_combine_partial(qs_data, Qxi, Xi, exp_vec, sign,
                                              f1, f2);
+                double _tc1 = omp_get_wtime();
+                #pragma omp atomic update
+                g_t_combine += _tc1 - _tc0;
                 qs_data->n_dlp_stored++;
                 if (rc == 2) qs_data->n_dlp_combined++;
                 mpz_clear(res);
                 if (rc == 2) { free(exp_vec); }
+                #pragma omp atomic update
+                g_t_trialDiv_total += omp_get_wtime() - _t_func0;
                 return rc;
             }
         }
@@ -675,6 +785,8 @@ int trialDivisionRecip(mpz_t Qxi, qs_struct *qs_data, mpz_t Xi,
 
     mpz_clear(res);
     free(exp_vec);
+    #pragma omp atomic update
+    g_t_trialDiv_total += omp_get_wtime() - _t_func0;
     return 0;
 }
 
@@ -785,7 +897,7 @@ int trialDivision(mpz_t Qxi, qs_struct * qs_data, mpz_t Xi){
 			 * Qfile_combined = a1*Q1 * a2*Q2 (sin dividir por LP²; LP² tiene exponente par)
 			 * Los factores de a1 y a2 están en el vector => la paridad cuadra.
 			 */
-			FILE *fp = fopen("polinomio.txt", "a");
+			FILE *fp = g_polinomio_fp;
 			if(fp){
 				mpz_t combined_lhs, combined_Q;
 				mpz_inits(combined_lhs, combined_Q, NULL);
@@ -822,9 +934,7 @@ int trialDivision(mpz_t Qxi, qs_struct * qs_data, mpz_t Xi){
 				fprintf(fp, ",");
 				mpz_out_str(fp, 10, match->roota);
 				fprintf(fp, "\n");
-				fflush(fp);
-				fclose(fp);
-				
+
 				mpz_clears(combined_lhs, combined_Q, my_lhs, aQ1, aQ2, NULL);
 			}
 			
@@ -884,11 +994,7 @@ int trialDivision(mpz_t Qxi, qs_struct * qs_data, mpz_t Xi){
  * @return retorna 1 si aun faltan numeros B_suaves por verificar y 0 en caso de haberlos encontrado todos
  */
 int factoringTrial(qs_struct * qs_data, unsigned long endPos, unsigned long posXi, unsigned long xmax){
-	FILE * fp;
-	if((fp = fopen("polinomio.txt","a")) == NULL){
-		perror("fopen");
-		exit(EXIT_FAILURE);
-	}
+	FILE *fp = g_polinomio_fp;
 	for (unsigned long i = 0; i < endPos; i++)
 	{
 		long x_val = mpz_get_si(qs_data->intervalo.Xi[posXi]);
@@ -899,6 +1005,7 @@ int factoringTrial(qs_struct * qs_data, unsigned long endPos, unsigned long posX
 			/* Full relation encontrada — vector ya insertado por trialDivision */
 			qs_data->n_BSuaves++;
 			/* Escribir lhs;a*Q(x);roota */
+			double _tw0 = omp_get_wtime();
 			mpz_t lhs, Qfile;
 			mpz_inits(lhs, Qfile, NULL);
 			mpz_mul(lhs, qs_data->poly.a, qs_data->intervalo.Xi[posXi]);
@@ -912,24 +1019,21 @@ int factoringTrial(qs_struct * qs_data, unsigned long endPos, unsigned long posX
 			fprintf(fp, ";");
 			mpz_out_str(fp, 10, qs_data->roota);
 			fprintf(fp, "\n");
-			fflush(fp);
 			mpz_clears(lhs, Qfile, NULL);
+			add_writeFullRel_time(omp_get_wtime() - _tw0);
 			if(qs_data->n_BSuaves==qs_data->mat.n_rows){
-				fclose(fp);
 				return 0;
 			}
 		} else if(result == 2){
 			/* Combined partial — vector y polinomio.txt ya escritos por trialDivision */
 			qs_data->n_BSuaves++;
 			if(qs_data->n_BSuaves==qs_data->mat.n_rows){
-				fclose(fp);
 				return 0;
 			}
 		}
 		/* result == 0: no relation o parcial guardada */
 		posXi++;
 	}
-	fclose(fp); 
 	return 1;
 }
 
