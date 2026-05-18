@@ -7,3 +7,10 @@ B_QSieve/salidap.txt
 B_QSieve/salida.txt
 B_QSieve/*.o
 B_QSieve/mulpoli
+B_QSieve/mulPoli
+B_QSieve/solve_matrix
+B_QSieve/graphify-out/
+graphify-out/
+.claude/
+.vexp/
+.vscode/

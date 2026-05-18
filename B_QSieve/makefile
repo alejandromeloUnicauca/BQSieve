@@ -5,7 +5,7 @@ CFLAGS= -fopenmp -std=c11 -ggdb3 -Wall
 LDFLAGS = -lmpfr -lgmp -lm
 
 # Lista de archivos fuente
-SRCS = B_QSieve.c sieve.c polynomial.c factoring.c 
+SRCS = B_QSieve.c sieve.c polynomial.c factoring.c
 
 # Lista de objetos generados a partir de los archivos fuente
 OBJS = $(SRCS:.c=.o)
@@ -19,8 +19,13 @@ MULPOLI_SRC = mulPoli.c
 MULPOLI_OBJ = mulPoli.o
 MULPOLI_TARGET = mulPoli
 
+# Solver GF(2) nativo (Block Lanczos)
+SOLVE_SRCS = solve_matrix.c linalg.c
+SOLVE_OBJS = solve_matrix.o linalg.o
+SOLVE_TARGET = solve_matrix
+
 # Regla por defecto para compilar en modo normal
-all: $(TARGET) $(MULPOLI_TARGET)
+all: $(TARGET) $(MULPOLI_TARGET) $(SOLVE_TARGET)
 
 # Regla para compilar el ejecutable en modo normal
 $(TARGET): $(OBJS)
@@ -30,8 +35,17 @@ $(MULPOLI_TARGET): $(MULPOLI_OBJ)
 	@echo "Compilando $(MULPOLI_TARGET) con $(MULPOLI_OBJ)"
 	$(CC) -o $@ $^ $(CFLAGS) $(LDFLAGS)
 
+$(SOLVE_TARGET): $(SOLVE_OBJS)
+	$(CC) -o $@ $^ $(CFLAGS) $(LDFLAGS)
+
 # Regla específica para compilar mulPoli.o
 $(MULPOLI_OBJ): $(MULPOLI_SRC)
+	$(CC) -c $< -o $@ $(CFLAGS)
+
+solve_matrix.o: solve_matrix.c linalg.h
+	$(CC) -c $< -o $@ $(CFLAGS)
+
+linalg.o: linalg.c linalg.h
 	$(CC) -c $< -o $@ $(CFLAGS)
 
 # Regla genérica para compilar archivos fuente a objetos en modo normal
@@ -40,13 +54,14 @@ $(MULPOLI_OBJ): $(MULPOLI_SRC)
 
 # Regla para compilar en modo depuración
 debug: CFLAGS += -ggdb3
-debug: $(DEBUG_TARGET) $(MULPOLI_TARGET)
+debug: $(DEBUG_TARGET) $(MULPOLI_TARGET) $(SOLVE_TARGET)
 
 $(DEBUG_TARGET): $(OBJS)
 	$(CC) -o $@ $^ $(CFLAGS) $(LDFLAGS)
 
 # Regla para limpiar archivos generados
 clean:
-	rm -f $(TARGET) $(DEBUG_TARGET) $(MULPOLI_TARGET) $(OBJS) $(MULPOLI_OBJ)
+	rm -f $(TARGET) $(DEBUG_TARGET) $(MULPOLI_TARGET) $(SOLVE_TARGET) \
+	      $(OBJS) $(MULPOLI_OBJ) $(SOLVE_OBJS)
 
 .PHONY: clean
