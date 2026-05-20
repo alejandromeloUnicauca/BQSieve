@@ -17,16 +17,25 @@ typedef struct{
 	mpz_t value;
 	mpfr_t log_value;
 	unsigned long llog_value;
-	/* Campos nativos precomputados para la criba uint8 */
-	uint32_t p;          /* primo como entero nativo */
-	uint8_t logp;        /* round(log2(p)) */
-	uint32_t root1;      /* raíz de criba 1 para el polinomio actual */
-	uint32_t root2;      /* raíz de criba 2 para el polinomio actual */
+	uint32_t p;            /* primo como entero nativo */
 	uint32_t sqrt_n_mod_p; /* sqrt(N) mod p, precomputado */
-	/* Recíproco precomputado para trial division sin operador % */
-	uint32_t recip;      /* ⌊2^32 / p⌋ o ⌊2^32 / p⌋+1 */
-	uint8_t  rcorrect;   /* 1 si recip es exacto, 0 si fue redondeado arriba */
 }prime;
+
+/**
+ * @brief Datos "calientes" de cada primo en un array compacto y contiguo.
+ *
+ * El bucle de criba y trialDivisionRecip solo necesitan estos campos. Vivir
+ * en un array denso de ~20 bytes (en vez de leerlos del struct prime de ~80
+ * bytes, que arrastra mpz_t/mpfr_t) mejora mucho la densidad de cache.
+ */
+typedef struct{
+	uint32_t p;        /* primo como entero nativo */
+	uint32_t root1;    /* raíz de criba 1 para el polinomio actual */
+	uint32_t root2;    /* raíz de criba 2 para el polinomio actual */
+	uint32_t recip;    /* ⌊2^32/p⌋ (o +1) para el test de divisibilidad */
+	uint8_t  logp;     /* round(log2(p)) */
+	uint8_t  rcorrect; /* 1 si recip es exacto, 0 si redondeado arriba */
+}sieve_prime;
 
  /**
   * @brief estructura que hace parte de la tabla de bloques en
@@ -60,6 +69,7 @@ typedef struct{
 
 typedef struct{
 	prime * primes;
+	sieve_prime * sp;   /* array compacto paralelo a primes[], datos calientes */
 	long length;
 }primes_base;
 

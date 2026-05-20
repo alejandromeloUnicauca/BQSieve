@@ -668,12 +668,12 @@ int trialDivisionRecip(mpz_t Qxi, qs_struct *qs_data, mpz_t Xi,
     long start_i = (qs_data->base.length > 0 && qs_data->base.primes[0].p == 2) ? 1 : 0;
 
     for (long i = start_i; i < qs_data->base.length; i++) {
-        prime *fb = &qs_data->base.primes[i];
-        uint32_t p     = fb->p;
-        uint32_t root1 = fb->root1;
-        uint32_t root2 = fb->root2;
-        uint32_t recip = fb->recip;
-        uint32_t rcorr = fb->rcorrect;
+        sieve_prime *sp = &qs_data->base.sp[i];
+        uint32_t p     = sp->p;
+        uint32_t root1 = sp->root1;
+        uint32_t root2 = sp->root2;
+        uint32_t recip = sp->recip;
+        uint32_t rcorr = sp->rcorrect;
 
         if (root1 == UINT32_MAX) {
             /* Raíz inválida (p | a): hacer mod directo con GMP */

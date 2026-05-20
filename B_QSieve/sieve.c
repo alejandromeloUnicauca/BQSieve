@@ -22,7 +22,22 @@
 /* Tamaño del bloque de criba: 32KB cabe en L1 cache */
 #define SIEVE_BLOCK_SIZE 32768
 
+/* Primos p <= SMALL_PRIME_MAX no se criban: golpean una fracción enorme de
+ * posiciones (p=2 toca la mitad) pero aportan poco log. Se omiten del bucle
+ * interno y se compensa bajando el umbral. Trial division sigue dividiendo
+ * por ellos, así que la corrección de relaciones no se ve afectada. */
+#define SMALL_PRIME_MAX 31
+/* Multiplicador de la corrección de umbral (ver g_small_correction). Saltar
+ * primos medianos vuelve la criba imprecisa (explosión de candidatos), por
+ * eso el cutoff se queda chico — solo los p<=31, como msieve. */
+#define SMALL_PRIME_CORR 1.3
+
 extern int CORES;
+
+/* Calculado una vez: nº de primos iniciales con p <= SMALL_PRIME_MAX y la
+ * corrección de log esperada que aportarían a una posición suave. */
+static long g_sieve_skip = -1;
+static unsigned int g_small_correction = 0;
 
 /* Acumuladores para diagnóstico del bottleneck del sieve */
 static double g_t_sieve_cutoff = 0;
@@ -166,44 +181,46 @@ void sieve_precompute_roots(qs_struct *qs_data) {
     mpz_t r1, r2;
     mpz_inits(r1, r2, NULL);
 
+    /* Asignar el array compacto paralelo a la base */
+    qs_data->base.sp = (sieve_prime *)malloc(
+        (size_t)qs_data->base.length * sizeof(sieve_prime));
+
     for (long i = 0; i < qs_data->base.length; i++) {
         prime *fb = &qs_data->base.primes[i];
-        fb->p = (uint32_t)mpz_get_ui(fb->value);
-        /* logp = round(log2(p)) */
-        if (fb->p >= 2)
-            fb->logp = (uint8_t)(log2((double)fb->p) + 0.5);
-        else
-            fb->logp = 1;
-        
+        sieve_prime *sp = &qs_data->base.sp[i];
+
+        uint32_t p = (uint32_t)mpz_get_ui(fb->value);
+        fb->p = p;
+        sp->p = p;
+        sp->logp = (p >= 2) ? (uint8_t)(log2((double)p) + 0.5) : 1;
+
         /* Precomputar sqrt(N) mod p */
-        if (fb->p == 2) {
+        if (p == 2) {
             fb->sqrt_n_mod_p = 1; /* N es impar, sqrt(N) mod 2 = 1 */
         } else {
             shanksTonelli(qs_data->n, fb->value, r1, r2);
             fb->sqrt_n_mod_p = (uint32_t)mpz_get_ui(r1);
         }
-        fb->root1 = 0;
-        fb->root2 = 0;
-        
-        /* Precomputar recíproco para trial division:
-         * recip = ⌊2^32 / p⌋ (o +1 si el truncamiento pierde precisión)
-         * Permite calcular (x % p) como: q = (uint32)((uint64)x * recip >> 32);
-         *                                 r = x - q * p;
-         * Ver Agner Fog, "Optimizing subroutines in assembly language" */
-        if (fb->p >= 2) {
-            uint64_t r64 = ((uint64_t)1 << 32) / (uint64_t)fb->p;
-            /* Verificar si el recíproco truncado es exacto */
-            double exact = 4294967296.0 / (double)fb->p;  /* 2^32 / p */
+        sp->root1 = 0;
+        sp->root2 = 0;
+
+        /* Recíproco para trial division: recip = ⌊2^32/p⌋ (o +1 si el
+         * truncamiento pierde precisión). Permite calcular (x % p) como
+         *   q = (uint32)((uint64)x * recip >> 32);  r = x - q*p;
+         * Ver Agner Fog, "Optimizing subroutines in assembly language". */
+        if (p >= 2) {
+            uint64_t r64 = ((uint64_t)1 << 32) / (uint64_t)p;
+            double exact = 4294967296.0 / (double)p;  /* 2^32 / p */
             if (fabs(exact - (double)r64) < 0.5) {
-                fb->rcorrect = 1;  /* recip es exacto (o redondeado abajo) */
-                fb->recip = (uint32_t)r64;
+                sp->rcorrect = 1;  /* recip exacto (o redondeado abajo) */
+                sp->recip = (uint32_t)r64;
             } else {
-                fb->rcorrect = 0;  /* necesita +1 para corregir */
-                fb->recip = (uint32_t)(r64 + 1);
+                sp->rcorrect = 0;  /* necesita +1 para corregir */
+                sp->recip = (uint32_t)(r64 + 1);
             }
         } else {
-            fb->recip = 0;
-            fb->rcorrect = 0;
+            sp->recip = 0;
+            sp->rcorrect = 0;
         }
     }
     mpz_clears(r1, r2, NULL);
@@ -257,9 +274,10 @@ void sieve_init_roots_for_a(qs_struct *qs_data, unsigned long sieve_interval) {
 
     for (long i = 0; i < blen; i++) {
         prime *fb = &qs_data->base.primes[i];
-        uint32_t p = fb->p;
+        sieve_prime *sp = &qs_data->base.sp[i];
+        uint32_t p = sp->p;
         if (p < 2) {
-            fb->root1 = fb->root2 = UINT32_MAX;
+            sp->root1 = sp->root2 = UINT32_MAX;
             for (unsigned int j = 0; j < s; j++)
                 g_root_delta[(size_t)j * blen + i] = 0;
             continue;
@@ -269,8 +287,8 @@ void sieve_init_roots_for_a(qs_struct *qs_data, unsigned long sieve_interval) {
 
         if (a_mod_p == 0) {
             /* p | a → caso lineal; sin deltas (se recomputa cada poly) */
-            fb->root1 = linear_sieve_root(qs_data, p, xmax);
-            fb->root2 = UINT32_MAX;
+            sp->root1 = linear_sieve_root(qs_data, p, xmax);
+            sp->root2 = UINT32_MAX;
             for (unsigned int j = 0; j < s; j++)
                 g_root_delta[(size_t)j * blen + i] = 0;
             continue;
@@ -288,8 +306,8 @@ void sieve_init_roots_for_a(qs_struct *qs_data, unsigned long sieve_interval) {
         if (r2 < 0) r2 += p;
         r2 = ((int64_t)a_inv * r2) % p;
 
-        fb->root1 = (uint32_t)((r1 + (int64_t)xmax) % p);
-        fb->root2 = (uint32_t)((r2 + (int64_t)xmax) % p);
+        sp->root1 = (uint32_t)((r1 + (int64_t)xmax) % p);
+        sp->root2 = (uint32_t)((r2 + (int64_t)xmax) % p);
 
         /* delta[j] = a⁻¹·(2·B_j) mod p — B_j ya viene doblado en Bvals */
         for (unsigned int j = 0; j < s; j++) {
@@ -312,20 +330,20 @@ void sieve_update_roots(qs_struct *qs_data, unsigned long sieve_interval) {
     const uint32_t *delta_j = &g_root_delta[(size_t)j * blen];
 
     for (long i = 0; i < blen; i++) {
-        prime *fb = &qs_data->base.primes[i];
-        uint32_t p = fb->p;
+        sieve_prime *sp = &qs_data->base.sp[i];
+        uint32_t p = sp->p;
         if (p < 2) continue;
         uint32_t d = delta_j[i];
         uint32_t shift = (sign > 0) ? (p - d) : d; /* root += shift (mod p) */
-        if (fb->root1 != UINT32_MAX) {
-            uint32_t r = fb->root1 + shift;
+        if (sp->root1 != UINT32_MAX) {
+            uint32_t r = sp->root1 + shift;
             if (r >= p) r -= p;
-            fb->root1 = r;
+            sp->root1 = r;
         }
-        if (fb->root2 != UINT32_MAX) {
-            uint32_t r = fb->root2 + shift;
+        if (sp->root2 != UINT32_MAX) {
+            uint32_t r = sp->root2 + shift;
             if (r >= p) r -= p;
-            fb->root2 = r;
+            sp->root2 = r;
         }
     }
 
@@ -335,9 +353,9 @@ void sieve_update_roots(qs_struct *qs_data, unsigned long sieve_interval) {
     unsigned int s = qs_data->siqs_state.num_factors;
     for (unsigned int k = 0; k < s; k++) {
         long idx = (long)qs_data->siqs_state.factor_fb_idx[k];
-        prime *fb = &qs_data->base.primes[idx];
-        fb->root1 = linear_sieve_root(qs_data, fb->p, xmax);
-        fb->root2 = UINT32_MAX;
+        sieve_prime *sp = &qs_data->base.sp[idx];
+        sp->root1 = linear_sieve_root(qs_data, sp->p, xmax);
+        sp->root2 = UINT32_MAX;
     }
 }
 
@@ -359,6 +377,25 @@ void sieve_mpqs(qs_struct *qs_data, unsigned long xmax,
 
     unsigned long sieve_interval = 2 * xmax; /* total de posiciones */
     unsigned long num_blocks = (sieve_interval + SIEVE_BLOCK_SIZE - 1) / SIEVE_BLOCK_SIZE;
+
+    /* Primera llamada: contar primos chicos a saltar y su corrección de log.
+     * Una posición es golpeada por p con prob ~n_roots/p y al serlo resta
+     * logp; la corrección es la suma esperada de esos aportes. */
+    if (g_sieve_skip < 0) {
+        g_sieve_skip = 0;
+        double corr = 0.0;
+        for (long i = 0; i < qs_data->base.length; i++) {
+            uint32_t p = qs_data->base.sp[i].p;
+            if (p > SMALL_PRIME_MAX) break;
+            g_sieve_skip++;
+            int nroots = (p == 2) ? 1 : 2;
+            corr += (double)nroots / (double)p * (double)qs_data->base.sp[i].logp;
+        }
+        /* Factor SMALL_PRIME_CORR: los números suaves son más divisibles por
+         * primos chicos que el promedio, así que pierden más log que el valor
+         * esperado. Se re-tunea según SMALL_PRIME_MAX. */
+        g_small_correction = (unsigned int)(corr * SMALL_PRIME_CORR + 0.5);
+    }
 
     /* Calcular cutoff al estilo msieve:
      * 
@@ -396,7 +433,12 @@ void sieve_mpqs(qs_struct *qs_data, unsigned long xmax,
             cutoff = c_bits - cutoff_config;
         else
             cutoff = 0;
-        
+
+        /* Compensar los primos chicos no cribados: una posición suave acumula
+         * g_small_correction menos log, así que se baja el umbral igual. */
+        if (cutoff > g_small_correction)
+            cutoff -= g_small_correction;
+
         /* Limitar a 250 (max uint8 útil) */
         if (cutoff > 250) cutoff = 250;
         if (cutoff < 2) cutoff = 2;
@@ -440,16 +482,18 @@ void sieve_mpqs(qs_struct *qs_data, unsigned long xmax,
         /* Inicializar bloque con cutoff - 1 (como msieve) */
         memset(sieve_block, (uint8_t)(cutoff - 1), block_len);
         
-        /* Cribar: restar logprime en cada posición de criba dentro del bloque */
-        for (long i = 0; i < qs_data->base.length; i++) {
-            prime *fb = &qs_data->base.primes[i];
-            uint32_t p = fb->p;
+        /* Cribar: restar logprime en cada posición. Se saltan los primos
+         * chicos (índices [0, g_sieve_skip)) ya descontados en el umbral.
+         * Itera el array compacto sieve_prime (denso en cache). */
+        for (long i = g_sieve_skip; i < qs_data->base.length; i++) {
+            sieve_prime *sp = &qs_data->base.sp[i];
+            uint32_t p = sp->p;
             if (p < 2) continue;
-            uint8_t logp = fb->logp;
-            
+            uint8_t logp = sp->logp;
+
             /* root1: primera posición dentro de este bloque */
-            if (fb->root1 != UINT32_MAX) {
-                uint32_t r1 = fb->root1;
+            if (sp->root1 != UINT32_MAX) {
+                uint32_t r1 = sp->root1;
                 /* Avanzar r1 al rango [block_start, block_start + p) */
                 if (r1 < block_start) {
                     unsigned long skip = (block_start - r1 + p - 1) / p;
@@ -459,10 +503,10 @@ void sieve_mpqs(qs_struct *qs_data, unsigned long xmax,
                     sieve_block[pos - block_start] -= logp;
                 }
             }
-            
+
             /* root2 */
-            if (fb->root2 != UINT32_MAX && fb->root2 != fb->root1) {
-                uint32_t r2 = fb->root2;
+            if (sp->root2 != UINT32_MAX && sp->root2 != sp->root1) {
+                uint32_t r2 = sp->root2;
                 if (r2 < block_start) {
                     unsigned long skip = (block_start - r2 + p - 1) / p;
                     r2 += (uint32_t)(skip * p);

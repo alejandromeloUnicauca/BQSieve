@@ -169,6 +169,7 @@ int main(int argc, char **argv)
 	//Inicializar campos a valores seguros
 	qs_data.n_BSuaves = 0;
 	qs_data.base.primes = NULL;
+	qs_data.base.sp = NULL;
 	qs_data.base.length = 0;
 	qs_data.blocks.block = NULL;
 	qs_data.blocks.length = 0;
@@ -594,8 +595,9 @@ void freeStruct(qs_struct * qs_data){
 		mpfr_clear(qs_data->base.primes[i].log_value);
 	}
 
-	free(qs_data->base.primes); 
-	
+	free(qs_data->base.primes);
+	free(qs_data->base.sp);
+
 	//liberar memoria de los bloques
 	if(qs_data->blocks.length > 0){
 		for (int i = 0; i < qs_data->blocks.length ; i++)
