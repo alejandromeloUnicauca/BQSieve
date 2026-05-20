@@ -24,6 +24,27 @@
 
 extern int CORES;
 
+/* Acumuladores para diagnóstico del bottleneck del sieve */
+static double g_t_sieve_cutoff = 0;
+static double g_t_sieve_roots  = 0;
+static double g_t_sieve_loop   = 0;
+static double g_t_sieve_scan   = 0;
+static unsigned long g_n_sieve_calls = 0;
+
+void print_sieve_stats(double total_wall) {
+    if (total_wall <= 0) total_wall = 1e-9;
+    double sum = g_t_sieve_cutoff + g_t_sieve_roots + g_t_sieve_loop + g_t_sieve_scan;
+    double other = total_wall - sum;
+    if (other < 0) other = 0;
+    printf("\n  [sieve_mpqs breakdown — %lu calls]\n", g_n_sieve_calls);
+    printf("    cutoff calc          : %.3fs (%5.1f%%)\n", g_t_sieve_cutoff, 100.0*g_t_sieve_cutoff/total_wall);
+    printf("    sieve_compute_roots  : %.3fs (%5.1f%%)\n", g_t_sieve_roots,  100.0*g_t_sieve_roots/total_wall);
+    printf("    memset+sieve loop    : %.3fs (%5.1f%%)\n", g_t_sieve_loop,   100.0*g_t_sieve_loop/total_wall);
+    printf("    scan candidates      : %.3fs (%5.1f%%)\n", g_t_sieve_scan,   100.0*g_t_sieve_scan/total_wall);
+    printf("    otros (malloc/free)  : %.3fs (%5.1f%%)\n", other,            100.0*other/total_wall);
+    fflush(stdout);
+}
+
 /*--------------------------------------------------------------------
  * shanksTonelli — raíz cuadrada modular (sin cambios)
  *--------------------------------------------------------------------*/
@@ -188,85 +209,135 @@ void sieve_precompute_roots(qs_struct *qs_data) {
     mpz_clears(r1, r2, NULL);
 }
 
+/* Deltas Gray code: g_root_delta[j*base.length + i] = a⁻¹·(2·B_j) mod p_i.
+ * Permite actualizar las raíces de criba entre polinomios derivados con un
+ * solo add+mod por primo en vez de recomputar a⁻¹ y las raíces desde cero. */
+static uint32_t *g_root_delta = NULL;
+static long g_root_delta_cap = 0;
+
+/* Inverso modular de v mod p vía extended gcd (uint32 nativo). */
+static inline uint32_t modinv_u32(uint32_t v, uint32_t p) {
+    int64_t aa = v, bb = p, xx = 1, xx1 = 0, qq, tt;
+    while (bb) { qq = aa/bb; tt = bb; bb = aa - qq*bb; aa = tt;
+        tt = xx1; xx1 = xx - qq*xx1; xx = tt; }
+    return (uint32_t)(((xx % (int64_t)p) + p) % p);
+}
+
+/* Raíz de criba para un primo q que divide 'a' (Q(x) ≡ 2bx+c mod q es lineal).
+ * Devuelve el offset en [0,p) o UINT32_MAX si 2b ≡ 0 (mod q). */
+static uint32_t linear_sieve_root(qs_struct *qs_data, uint32_t p, unsigned long xmax) {
+    uint32_t b_mod_p = (uint32_t)mpz_fdiv_ui(qs_data->poly.b, p);
+    uint32_t twob = (2 * b_mod_p) % p;
+    if (twob == 0) return UINT32_MAX;
+    uint32_t twob_inv = modinv_u32(twob, p);
+    uint32_t c_mod_p = (uint32_t)mpz_fdiv_ui(qs_data->poly.c, p);
+    int64_t s = (-(int64_t)c_mod_p * (int64_t)twob_inv) % (int64_t)p;
+    if (s < 0) s += p;
+    return (uint32_t)(((unsigned long)s + xmax) % p);
+}
+
 /*--------------------------------------------------------------------
- * sieve_compute_roots — Calcula raíces de criba para el polinomio actual.
+ * sieve_init_roots_for_a — Cómputo completo de raíces + precompute de
+ * deltas Gray code. Se llama una vez por cada nuevo 'a'.
  *
- * Para Q(x) = a*x² + 2*b*x + c, las raíces de Q(x) ≡ 0 (mod p) son:
- *   x ≡ a⁻¹ * (±sqrt(N) - b) (mod p)
- *
- * Las raíces se almacenan como offsets en [0, sieve_interval)
- * donde sieve_interval = 2 * xmax.
+ * Para Q(x) = a*x² + 2*b*x + c, las raíces de Q(x) ≡ 0 (mod p) son
+ *   x ≡ a⁻¹·(±sqrt(N) - b) (mod p),
+ * almacenadas como offsets en [0,p) tras sumar xmax.
  *--------------------------------------------------------------------*/
-void sieve_compute_roots(qs_struct *qs_data, unsigned long sieve_interval) {
-    for (long i = 0; i < qs_data->base.length; i++) {
+void sieve_init_roots_for_a(qs_struct *qs_data, unsigned long sieve_interval) {
+    long blen = qs_data->base.length;
+    unsigned int s = qs_data->siqs_state.num_factors;
+    unsigned long xmax = sieve_interval / 2;
+
+    if (g_root_delta_cap < blen) {
+        free(g_root_delta);
+        g_root_delta = (uint32_t *)malloc((size_t)blen * MAX_SIQS_FACTORS * sizeof(uint32_t));
+        g_root_delta_cap = blen;
+    }
+
+    for (long i = 0; i < blen; i++) {
         prime *fb = &qs_data->base.primes[i];
         uint32_t p = fb->p;
         if (p < 2) {
-            fb->root1 = fb->root2 = UINT32_MAX; /* inválido */
+            fb->root1 = fb->root2 = UINT32_MAX;
+            for (unsigned int j = 0; j < s; j++)
+                g_root_delta[(size_t)j * blen + i] = 0;
             continue;
         }
 
-        /* a mod p */
         uint32_t a_mod_p = (uint32_t)mpz_fdiv_ui(qs_data->poly.a, p);
-        uint32_t b_mod_p = (uint32_t)mpz_fdiv_ui(qs_data->poly.b, p);
-        
+
         if (a_mod_p == 0) {
-            /* p divide a → Q(x) es lineal mod p: 2*b*x + c ≡ 0 (mod p) */
-            uint32_t twob = (2 * b_mod_p) % p;
-            if (twob == 0) {
-                fb->root1 = fb->root2 = UINT32_MAX;
-                continue;
-            }
-            /* Inverso modular con extended gcd (uint32 nativo) */
-            int64_t g, x0, y0;
-            {
-                int64_t aa = twob, bb = p, xx = 1, yy = 0, xx1 = 0, yy1 = 1, qq, tt;
-                while (bb) { qq = aa/bb; tt = bb; bb = aa - qq*bb; aa = tt;
-                    tt = xx1; xx1 = xx - qq*xx1; xx = tt;
-                    tt = yy1; yy1 = yy - qq*yy1; yy = tt; }
-                g = aa; x0 = xx; y0 = yy;
-                (void)y0; (void)g;
-            }
-            uint32_t c_mod_p = (uint32_t)mpz_fdiv_ui(qs_data->poly.c, p);
-            int64_t s = (-(int64_t)c_mod_p * x0) % (int64_t)p;
-            if (s < 0) s += p;
-            /* Ajustar al offset del intervalo: el intervalo va de -xmax a +xmax
-             * posición en array = x + xmax, donde x es la raíz de criba.
-             * La raíz s está en [0,p), necesitamos el primer offset ≥ 0 en el array.
-             */
-            unsigned long xmax = sieve_interval / 2;
-            /* El primer x que satisface x ≡ s (mod p) y x >= -xmax es:
-             * offset = (s + xmax) mod p */
-            fb->root1 = (uint32_t)((s + xmax) % p);
-            fb->root2 = UINT32_MAX; /* una sola raíz */
+            /* p | a → caso lineal; sin deltas (se recomputa cada poly) */
+            fb->root1 = linear_sieve_root(qs_data, p, xmax);
+            fb->root2 = UINT32_MAX;
+            for (unsigned int j = 0; j < s; j++)
+                g_root_delta[(size_t)j * blen + i] = 0;
             continue;
         }
-        
-        /* a_inv mod p */
-        uint32_t a_inv;
-        {
-            int64_t aa = a_mod_p, bb = p, xx = 1, xx1 = 0, qq, tt;
-            while (bb) { qq = aa/bb; tt = bb; bb = aa - qq*bb; aa = tt;
-                tt = xx1; xx1 = xx - qq*xx1; xx = tt; }
-            a_inv = (uint32_t)(((xx % (int64_t)p) + p) % p);
-        }
-        
+
+        uint32_t a_inv = modinv_u32(a_mod_p, p);
+        uint32_t b_mod_p = (uint32_t)mpz_fdiv_ui(qs_data->poly.b, p);
         uint32_t sqrt_n = fb->sqrt_n_mod_p;
-        unsigned long xmax = sieve_interval / 2;
-        
-        /* root1 = a_inv * (sqrt_n - b) mod p */
+
         int64_t r1 = ((int64_t)sqrt_n - (int64_t)b_mod_p) % (int64_t)p;
         if (r1 < 0) r1 += p;
         r1 = ((int64_t)a_inv * r1) % p;
-        
-        /* root2 = a_inv * (-sqrt_n - b) mod p = a_inv * (p - sqrt_n - b) mod p */
+
         int64_t r2 = ((int64_t)(p - sqrt_n) - (int64_t)b_mod_p) % (int64_t)p;
         if (r2 < 0) r2 += p;
         r2 = ((int64_t)a_inv * r2) % p;
-        
-        /* Ajustar al offset en el array de criba [0, sieve_interval) */
-        fb->root1 = (uint32_t)(((int64_t)r1 + (int64_t)xmax) % p);
-        fb->root2 = (uint32_t)(((int64_t)r2 + (int64_t)xmax) % p);
+
+        fb->root1 = (uint32_t)((r1 + (int64_t)xmax) % p);
+        fb->root2 = (uint32_t)((r2 + (int64_t)xmax) % p);
+
+        /* delta[j] = a⁻¹·(2·B_j) mod p — B_j ya viene doblado en Bvals */
+        for (unsigned int j = 0; j < s; j++) {
+            uint32_t bj = (uint32_t)mpz_fdiv_ui(qs_data->siqs_state.Bvals[j], p);
+            g_root_delta[(size_t)j * blen + i] =
+                (uint32_t)(((uint64_t)a_inv * bj) % p);
+        }
+    }
+}
+
+/*--------------------------------------------------------------------
+ * sieve_update_roots — Actualización incremental de raíces entre
+ * polinomios derivados. b cambió por sign·(2·B_j), así que cada raíz
+ * cambia por -sign·delta[j] (mod p): un add + resta condicional por primo.
+ *--------------------------------------------------------------------*/
+void sieve_update_roots(qs_struct *qs_data, unsigned long sieve_interval) {
+    long blen = qs_data->base.length;
+    unsigned int j = qs_data->siqs_state.sieve_flip_j;
+    int sign = qs_data->siqs_state.sieve_flip_sign;
+    const uint32_t *delta_j = &g_root_delta[(size_t)j * blen];
+
+    for (long i = 0; i < blen; i++) {
+        prime *fb = &qs_data->base.primes[i];
+        uint32_t p = fb->p;
+        if (p < 2) continue;
+        uint32_t d = delta_j[i];
+        uint32_t shift = (sign > 0) ? (p - d) : d; /* root += shift (mod p) */
+        if (fb->root1 != UINT32_MAX) {
+            uint32_t r = fb->root1 + shift;
+            if (r >= p) r -= p;
+            fb->root1 = r;
+        }
+        if (fb->root2 != UINT32_MAX) {
+            uint32_t r = fb->root2 + shift;
+            if (r >= p) r -= p;
+            fb->root2 = r;
+        }
+    }
+
+    /* Los s primos que dividen 'a' (caso lineal) sí se recomputan: su raíz
+     * depende de b y c de forma no incremental. Son pocos (s ≤ 9). */
+    unsigned long xmax = sieve_interval / 2;
+    unsigned int s = qs_data->siqs_state.num_factors;
+    for (unsigned int k = 0; k < s; k++) {
+        long idx = (long)qs_data->siqs_state.factor_fb_idx[k];
+        prime *fb = &qs_data->base.primes[idx];
+        fb->root1 = linear_sieve_root(qs_data, fb->p, xmax);
+        fb->root2 = UINT32_MAX;
     }
 }
 
@@ -283,9 +354,12 @@ void sieve_compute_roots(qs_struct *qs_data, unsigned long sieve_interval) {
 void sieve_mpqs(qs_struct *qs_data, unsigned long xmax,
                 long **out_indices, unsigned long *out_count)
 {
+    g_n_sieve_calls++;
+    double _t0 = omp_get_wtime();
+
     unsigned long sieve_interval = 2 * xmax; /* total de posiciones */
     unsigned long num_blocks = (sieve_interval + SIEVE_BLOCK_SIZE - 1) / SIEVE_BLOCK_SIZE;
-    
+
     /* Calcular cutoff al estilo msieve:
      * 
      * El sieve array se inicializa con (cutoff_fill - 1). Se resta log2(p)
@@ -327,9 +401,17 @@ void sieve_mpqs(qs_struct *qs_data, unsigned long xmax,
         if (cutoff > 250) cutoff = 250;
         if (cutoff < 2) cutoff = 2;
     }
-    
-    /* Calcular raíces de criba para este polinomio */
-    sieve_compute_roots(qs_data, sieve_interval);
+    double _t1 = omp_get_wtime();
+    g_t_sieve_cutoff += _t1 - _t0;
+
+    /* Raíces de criba: cómputo completo si cambió 'a', incremental (Gray
+     * code) si solo cambió 'b' respecto al polinomio derivado anterior. */
+    if (qs_data->siqs_state.sieve_new_a)
+        sieve_init_roots_for_a(qs_data, sieve_interval);
+    else
+        sieve_update_roots(qs_data, sieve_interval);
+    double _t2 = omp_get_wtime();
+    g_t_sieve_roots += _t2 - _t1;
     
     /* Array temporal de criba: solo un bloque de 32KB en stack o malloc alineado */
     uint8_t *sieve_block = (uint8_t *)malloc(SIEVE_BLOCK_SIZE);
@@ -353,7 +435,8 @@ void sieve_mpqs(qs_struct *qs_data, unsigned long xmax,
         if (block_end > sieve_interval)
             block_end = sieve_interval;
         unsigned long block_len = block_end - block_start;
-        
+
+        double _tl0 = omp_get_wtime();
         /* Inicializar bloque con cutoff - 1 (como msieve) */
         memset(sieve_block, (uint8_t)(cutoff - 1), block_len);
         
@@ -390,6 +473,9 @@ void sieve_mpqs(qs_struct *qs_data, unsigned long xmax,
             }
         }
         
+        double _tl1 = omp_get_wtime();
+        g_t_sieve_loop += _tl1 - _tl0;
+
         /* Escanear el bloque: buscar posiciones con bit 7 set
          * (underflow = el valor original era >= cutoff y se restó bastante) */
         uint64_t *packed = (uint64_t *)sieve_block;
@@ -427,8 +513,9 @@ void sieve_mpqs(qs_struct *qs_data, unsigned long xmax,
                 }
             }
         }
+        g_t_sieve_scan += omp_get_wtime() - _tl1;
     }
-    
+
     free(sieve_block);
     *out_indices = indices;
     *out_count = count;

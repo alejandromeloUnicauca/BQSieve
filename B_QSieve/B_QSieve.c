@@ -26,6 +26,7 @@ extern int VERBOSE;
 
 //Cantidad de cores que se quieren usar para el cribado, 1 por defecto
 int CORES = 1;
+int SIEVE_MULT = 1; /* multiplicador del sieve_size de la tabla msieve */
 // Modo verbose: 0 = silencioso (solo resultado + tiempo), 1 = log detallado
 int VERBOSE = 0;
 
@@ -267,8 +268,9 @@ int main(int argc, char **argv)
 	// Precomputar raíces sqrt(N) mod p y campos nativos (uint32/uint8)
 	sieve_precompute_roots(&qs_data);
 
-	//Intervalo de criba: usar sieve_size de la tabla de parámetros
-	mpz_set_ui(qs_data.intervalo.length, qs_data.sieve_params.sieve_size);
+	//Intervalo de criba: sieve_size de la tabla msieve × SIEVE_MULT (flag -s)
+	mpz_set_ui(qs_data.intervalo.length,
+	           (unsigned long)qs_data.sieve_params.sieve_size * (unsigned long)SIEVE_MULT);
 
 	// Calcular large_prime_bound = large_mult * primo_más_grande_de_la_base
 	{
@@ -447,6 +449,8 @@ int main(int argc, char **argv)
 		       sum, 100.0*sum/tw, tw - sum);
 		extern void print_factoring_stats(double total_wall);
 		print_factoring_stats(t_factor);
+		extern void print_sieve_stats(double total_wall);
+		print_sieve_stats(t_sieve);
 	}
 	
 	
@@ -543,53 +547,39 @@ void crearMatrizNula(qs_struct * qs_data){
  * @param n:tamaño de los bloques
  */
 void createBlocks(int n, qs_struct * qs_data){
-	//TODO:cambiar bloques por punteros a base
-	//reservo memoria para el array de bloques
-	qs_data->blocks.block = (prime_block*)malloc((qs_data->blocks.length)*sizeof(prime_block));
-	
-	
-	//reservo memoria para cada bloque
-	for(int i = 0; i < qs_data->blocks.length; i++)
-	{
-		qs_data->blocks.block[i].factors = (prime*)malloc(n*sizeof(prime));//reservo memoria para n factores
-		//printf("%x\n",qs_data->blocks.block[i].factors);
-	}
-		
-	mpz_t mulTemp;//variable multiplicacion de bloques
+	/* Número real de bloques que se necesitan para cubrir toda la base.
+	 * El user pidió blocks.length grupos, pero si base.length no es múltiplo
+	 * de n el último grupo es más pequeño y los siguientes serían vacíos. */
+	unsigned long real_blocks = (qs_data->base.length + n - 1) / n;
+	if (real_blocks < qs_data->blocks.length) qs_data->blocks.length = real_blocks;
+
+	qs_data->blocks.block = (prime_block*)malloc(qs_data->blocks.length * sizeof(prime_block));
+	for (unsigned long i = 0; i < qs_data->blocks.length; i++)
+		qs_data->blocks.block[i].factors = (prime*)malloc(n * sizeof(prime));
+
+	mpz_t mulTemp;
 	mpz_init(mulTemp);
-	mpz_set_ui(mulTemp,1);
-	
-	//Creo bloques de tamaño n a partir de los factores de la base que
-	//esta almacenada en la estructura
+	mpz_set_ui(mulTemp, 1);
+
 	int contBlock = 0;
 	int contFact = 0;
-	
-	for (int i = 0; i < qs_data->base.length; i++)
-	{
-		//si el blo1ue se llena avanzo al siguiente
-		if(contFact==n)
-		{
+	for (int i = 0; i < qs_data->base.length; i++) {
+		if (contFact == n) {
 			qs_data->blocks.block[contBlock].length = contFact;
 			mpz_init(qs_data->blocks.block[contBlock].prod_factors);
-			mpz_set(qs_data->blocks.block[contBlock].prod_factors,mulTemp);
-			mpz_set_ui(mulTemp,1);
-			
+			mpz_set(qs_data->blocks.block[contBlock].prod_factors, mulTemp);
+			mpz_set_ui(mulTemp, 1);
 			contBlock++;
 			contFact = 0;
 		}
-		//TODO:cambiar value de factors por puntero
 		mpz_init(qs_data->blocks.block[contBlock].factors[contFact].value);
-		mpz_set(qs_data->blocks.block[contBlock].factors[contFact].value,qs_data->base.primes[i].value);
-		mpz_mul(mulTemp,mulTemp,qs_data->base.primes[i].value);
-		//gmp_printf("%Zd,",qs_data->blocks.block[contBlock].factors[contFact].value);
+		mpz_set(qs_data->blocks.block[contBlock].factors[contFact].value, qs_data->base.primes[i].value);
+		mpz_mul(mulTemp, mulTemp, qs_data->base.primes[i].value);
 		contFact++;
 	}
-	
-	//asigno el tamaño del ultimo bloque y el la
-	//multiplicacion de los facatores del ultimo bloque
 	qs_data->blocks.block[contBlock].length = contFact;
 	mpz_init(qs_data->blocks.block[contBlock].prod_factors);
-	mpz_set(qs_data->blocks.block[contBlock].prod_factors,mulTemp);
+	mpz_set(qs_data->blocks.block[contBlock].prod_factors, mulTemp);
 	mpz_clear(mulTemp);
 }
 
@@ -836,7 +826,7 @@ void parseArgs(int argc, char **argv, int *flagd, int *flagh, char **hdvalue, ch
 	int c;
 	opterr = 0;
 	
-	while ((c = getopt(argc, argv, "d:h:b:c:v")) != -1){
+	while ((c = getopt(argc, argv, "d:h:b:c:s:v")) != -1){
 		switch(c){
 			case 'd':
 				if(*flagh == 1){
@@ -861,6 +851,10 @@ void parseArgs(int argc, char **argv, int *flagd, int *flagh, char **hdvalue, ch
 				break;
 			case 'c':
 				*cvalue = optarg;
+				break;
+			case 's':
+				SIEVE_MULT = atoi(optarg);
+				if (SIEVE_MULT < 1) SIEVE_MULT = 1;
 				break;
 			case 'v':
 				VERBOSE = 1;

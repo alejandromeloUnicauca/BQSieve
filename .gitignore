@@ -6,6 +6,7 @@ B_QSieve/pos.txt
 B_QSieve/salidap.txt
 B_QSieve/salida.txt
 B_QSieve/*.o
+B_QSieve/*.d
 B_QSieve/mulpoli
 B_QSieve/mulPoli
 B_QSieve/solve_matrix

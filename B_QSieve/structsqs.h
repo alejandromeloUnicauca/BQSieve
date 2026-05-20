@@ -9,31 +9,6 @@
  * @brief Contiene las estructuras para el proyecto
  */
  
- /**
-  * @brief estructura que contiene los datos que nos ayudan
-  * a recuperar el vector de un numero suave
-  */
-typedef struct{
-	/** maximo comun divisor  */
-	mpz_t gcd;
-	/** veces que se repite el gcd */
-	int periodo;
-	/** bloque en el que se obtuvo el gcd y el periodo*/
-	int block;
-}div_data;
-
- /**
-  * @brief esta estructura contiene un apuntador para crear un
-  * array donde se almacenaran los datos que nos ayudan a recuperar el vector
-  * exponente de un numero suave
-  */
-typedef struct{
-	/**array de datos de las divisiones*/
-	div_data * data;
-	/**numero de elementos en el array*/
-	int n_values;
-}div_data_table;
-
 /**
  * @brief estructura para almacenar los primos
  * de la base y sus logaritmos
@@ -127,6 +102,12 @@ typedef struct {
     unsigned long poly_index;      /* índice actual del polinomio derivado (0..2^(s-1)-1) */
     unsigned long num_derived;     /* 2^(s-1) = total de polinomios por este a */
     mpz_t target_a;                /* valor óptimo de a = sqrt(2N)/sieve_size */
+    /* Señalización para la actualización Gray code de raíces de criba:
+     * sieve_new_a=1 → recomputar raíces y deltas desde cero;
+     * sieve_new_a=0 → update incremental con el factor sieve_flip_j y sieve_flip_sign. */
+    int sieve_new_a;
+    unsigned int sieve_flip_j;
+    int sieve_flip_sign;
 } siqs_poly_state;
 
 typedef struct{
@@ -197,11 +178,5 @@ typedef struct{
 	/** multiplicador Knuth-Schroeppel (k tal que factorizamos k*N) */
 	unsigned int multiplier;
 }qs_struct;
-
-//divisiones sucesivas
-typedef struct{
-	int col;
-	int n_div;
-}data_divT;
 
 #endif // STRUCTSQS_H

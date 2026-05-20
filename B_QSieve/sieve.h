@@ -15,10 +15,16 @@ int shanksTonelli(mpz_t n, mpz_t p, mpz_t r1, mpz_t r2);
 void sieve_precompute_roots(qs_struct *qs_data);
 
 /**
- * @brief Calcula raíces de criba para el polinomio actual.
- * Se llama cada vez que se genera un nuevo polinomio.
+ * @brief Cómputo completo de raíces de criba + precompute de deltas Gray code.
+ * Se llama una vez por cada nuevo valor de 'a'.
  */
-void sieve_compute_roots(qs_struct *qs_data, unsigned long sieve_interval);
+void sieve_init_roots_for_a(qs_struct *qs_data, unsigned long sieve_interval);
+
+/**
+ * @brief Actualización incremental de raíces entre polinomios derivados
+ * (mismo 'a', distinto 'b'). Usa los deltas Gray code precomputados.
+ */
+void sieve_update_roots(qs_struct *qs_data, unsigned long sieve_interval);
 
 /**
  * @brief Criba logarítmica uint8 en bloques de 32KB (cache-friendly).

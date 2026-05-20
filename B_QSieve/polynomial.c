@@ -219,6 +219,7 @@ static void build_new_a(qs_struct *qs_data) {
     /* Inicializar iteración de polinomios derivados */
     st->poly_index = 0;
     st->num_derived = 1UL << (s - 1);
+    st->sieve_new_a = 1; /* la criba debe recomputar raíces y deltas */
 
     /* Doblar los B_j para futuras iteraciones */
     for (unsigned int j = 0; j < s; j++) {
@@ -247,12 +248,17 @@ static int next_siqs_b(qs_struct *qs_data) {
     while ((i & (1UL << j)) == 0)
         j++;
 
-    /* Sumar o restar 2*B_j */
+    /* Sumar o restar 2*B_j. Señalizar a la criba el factor y signo
+     * para que actualice las raíces incrementalmente (sin recomputar). */
     if (i & (1UL << (j + 1))) {
         mpz_add(qs_data->poly.b, qs_data->poly.b, st->Bvals[j]);
+        st->sieve_flip_sign = +1;
     } else {
         mpz_sub(qs_data->poly.b, qs_data->poly.b, st->Bvals[j]);
+        st->sieve_flip_sign = -1;
     }
+    st->sieve_flip_j = j;
+    st->sieve_new_a = 0;
 
     /* Recalcular c = (b² - N) / a */
     mpz_mul(qs_data->poly.c, qs_data->poly.b, qs_data->poly.b);

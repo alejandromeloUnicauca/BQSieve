@@ -1,7 +1,9 @@
 #Makefile
 # Variables comunes
 CC=gcc
-CFLAGS= -fopenmp -std=c11 -ggdb3 -Wall
+# -MMD -MP: gcc genera archivos .d con las dependencias de headers de cada .o,
+# de modo que editar un .h recompila todos los .c que lo incluyen.
+CFLAGS= -O2 -fopenmp -std=c11 -Wall -MMD -MP
 LDFLAGS = -lmpfr -lgmp -lm
 
 # Lista de archivos fuente
@@ -52,16 +54,20 @@ linalg.o: linalg.c linalg.h
 %.o: %.c
 	$(CC) -c $< -o $@ $(CFLAGS)
 
-# Regla para compilar en modo depuración
-debug: CFLAGS += -ggdb3
+# Regla para compilar en modo depuración (sin optimización, con símbolos)
+debug: CFLAGS += -O0 -ggdb3
 debug: $(DEBUG_TARGET) $(MULPOLI_TARGET) $(SOLVE_TARGET)
 
 $(DEBUG_TARGET): $(OBJS)
 	$(CC) -o $@ $^ $(CFLAGS) $(LDFLAGS)
 
+# Incluir los archivos de dependencias generados por -MMD (si existen)
+-include $(OBJS:.o=.d) $(MULPOLI_OBJ:.o=.d) $(SOLVE_OBJS:.o=.d)
+
 # Regla para limpiar archivos generados
 clean:
 	rm -f $(TARGET) $(DEBUG_TARGET) $(MULPOLI_TARGET) $(SOLVE_TARGET) \
-	      $(OBJS) $(MULPOLI_OBJ) $(SOLVE_OBJS)
+	      $(OBJS) $(MULPOLI_OBJ) $(SOLVE_OBJS) \
+	      $(OBJS:.o=.d) $(MULPOLI_OBJ:.o=.d) $(SOLVE_OBJS:.o=.d)
 
 .PHONY: clean
