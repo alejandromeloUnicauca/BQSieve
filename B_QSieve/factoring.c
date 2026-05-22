@@ -6,24 +6,63 @@
 #include <math.h>
 #include <omp.h>
 #include "structsqs.h"
+#include "factoring.h"
 
-FILE *g_polinomio_fp = NULL;
+/* ---- Almacén en memoria de relaciones ------------------------------------ */
 
-void polinomio_open(void) {
-    if (g_polinomio_fp == NULL) {
-        g_polinomio_fp = fopen("polinomio.txt", "w");
-        if (g_polinomio_fp == NULL) {
-            perror("fopen polinomio.txt");
-            exit(EXIT_FAILURE);
-        }
+static relation_store_t g_relstore = {NULL, 0, 0};
+
+void relstore_init(void) {
+    g_relstore.count = 0;
+    if (g_relstore.cap == 0) {
+        g_relstore.cap     = 256;
+        g_relstore.entries = malloc(g_relstore.cap * sizeof(rel_entry_t));
     }
 }
 
-void polinomio_close(void) {
-    if (g_polinomio_fp != NULL) {
-        fclose(g_polinomio_fp);
-        g_polinomio_fp = NULL;
+void relstore_free(void) {
+    for (int i = 0; i < g_relstore.count; i++) {
+        free(g_relstore.entries[i].lhs);
+        free(g_relstore.entries[i].qfile);
+        free(g_relstore.entries[i].rootas);
     }
+    free(g_relstore.entries);
+    g_relstore.entries = NULL;
+    g_relstore.count   = 0;
+    g_relstore.cap     = 0;
+}
+
+relation_store_t *relstore_get(void) { return &g_relstore; }
+
+/* mpz_get_str(NULL, ...) asigna con malloc de GMP, compatible con free(). */
+static void relstore_add_full(mpz_t lhs, mpz_t qfile, mpz_t roota) {
+    if (g_relstore.count == g_relstore.cap) {
+        g_relstore.cap    *= 2;
+        g_relstore.entries = realloc(g_relstore.entries,
+                                     g_relstore.cap * sizeof(rel_entry_t));
+    }
+    rel_entry_t *e = &g_relstore.entries[g_relstore.count++];
+    e->lhs    = mpz_get_str(NULL, 10, lhs);
+    e->qfile  = mpz_get_str(NULL, 10, qfile);
+    e->rootas = mpz_get_str(NULL, 10, roota);
+}
+
+static void relstore_add_combined(mpz_t lhs, mpz_t qfile,
+                                  mpz_t roota1, mpz_t roota2) {
+    if (g_relstore.count == g_relstore.cap) {
+        g_relstore.cap    *= 2;
+        g_relstore.entries = realloc(g_relstore.entries,
+                                     g_relstore.cap * sizeof(rel_entry_t));
+    }
+    rel_entry_t *e = &g_relstore.entries[g_relstore.count++];
+    e->lhs   = mpz_get_str(NULL, 10, lhs);
+    e->qfile = mpz_get_str(NULL, 10, qfile);
+    char *s1 = mpz_get_str(NULL, 10, roota1);
+    char *s2 = mpz_get_str(NULL, 10, roota2);
+    size_t len = strlen(s1) + 1 + strlen(s2) + 1;
+    e->rootas = malloc(len);
+    snprintf(e->rootas, len, "%s,%s", s1, s2);
+    free(s1); free(s2);
 }
 
 static double g_t_trialDiv_total = 0;
@@ -231,7 +270,6 @@ int blockDivisionV2(mpz_t Qxi, qs_struct *qs_data, mpz_t Xi)
 int factoringBlocks(qs_struct *qs_data, unsigned long endPos, unsigned long posXi, unsigned long xmax)
 {
     (void)xmax;
-    FILE *fp = g_polinomio_fp;
 
     for (unsigned long i = 0; i < endPos; i++) {
         int result = blockDivisionV2(qs_data->intervalo.Qxi[i], qs_data,
@@ -245,12 +283,7 @@ int factoringBlocks(qs_struct *qs_data, unsigned long endPos, unsigned long posX
             mpz_add(lhs, lhs, qs_data->poly.b);
             mpz_mul(Qfile, lhs, lhs);
             mpz_sub(Qfile, Qfile, qs_data->n);
-            mpz_out_str(fp, 10, lhs);
-            fprintf(fp, ";");
-            mpz_out_str(fp, 10, Qfile);
-            fprintf(fp, ";");
-            mpz_out_str(fp, 10, qs_data->roota);
-            fprintf(fp, "\n");
+            relstore_add_full(lhs, Qfile, qs_data->roota);
             mpz_clears(lhs, Qfile, NULL);
             add_writeFullRel_time(omp_get_wtime() - _tw0);
             if (qs_data->n_BSuaves == qs_data->mat.n_rows) return 0;
@@ -397,9 +430,8 @@ static int combine_two_partials(qs_struct *qs_data,
         insertarNumero(&qs_data->mat, qs_data->n_BSuaves,
                        (int)match->a_factor_fb_idx[j] + 1, 1);
 
-    /* Escribir relación combinada en polinomio.txt */
-    FILE *fp = g_polinomio_fp;
-    if (fp) {
+    /* Almacenar relación combinada en memoria */
+    {
         mpz_t combined_lhs, combined_Q, my_lhs, aQ1, aQ2;
         mpz_inits(combined_lhs, combined_Q, my_lhs, aQ1, aQ2, NULL);
         mpz_mul(my_lhs, qs_data->poly.a, Xi_a);
@@ -408,14 +440,7 @@ static int combine_two_partials(qs_struct *qs_data,
         mpz_mul(aQ1, qs_data->poly.a, Qxi_a);
         mpz_mul(aQ2, match->a_value, match->Qx);
         mpz_mul(combined_Q, aQ1, aQ2);
-        mpz_out_str(fp, 10, combined_lhs);
-        fprintf(fp, ";");
-        mpz_out_str(fp, 10, combined_Q);
-        fprintf(fp, ";");
-        mpz_out_str(fp, 10, qs_data->roota);
-        fprintf(fp, ",");
-        mpz_out_str(fp, 10, match->roota);
-        fprintf(fp, "\n");
+        relstore_add_combined(combined_lhs, combined_Q, qs_data->roota, match->roota);
         mpz_clears(combined_lhs, combined_Q, my_lhs, aQ1, aQ2, NULL);
     }
 
@@ -738,7 +763,6 @@ int trialDivisionRecip(mpz_t Qxi, qs_struct *qs_data, mpz_t Xi,
  * @return retorna 1 si aun faltan numeros B_suaves por verificar y 0 en caso de haberlos encontrado todos
  */
 int factoringTrial(qs_struct * qs_data, unsigned long endPos, unsigned long posXi, unsigned long xmax){
-	FILE *fp = g_polinomio_fp;
 	for (unsigned long i = 0; i < endPos; i++)
 	{
 		long x_val = mpz_get_si(qs_data->intervalo.Xi[posXi]);
@@ -748,21 +772,15 @@ int factoringTrial(qs_struct * qs_data, unsigned long endPos, unsigned long posX
 		if(result == 1){
 			/* Full relation encontrada — vector ya insertado por trialDivision */
 			qs_data->n_BSuaves++;
-			/* Escribir lhs;a*Q(x);roota */
 			double _tw0 = omp_get_wtime();
 			mpz_t lhs, Qfile;
 			mpz_inits(lhs, Qfile, NULL);
 			mpz_mul(lhs, qs_data->poly.a, qs_data->intervalo.Xi[posXi]);
 			mpz_add(lhs, lhs, qs_data->poly.b);
-			/* Qfile = a * Q(x) = lhs² - N */
+			/* Qfile = lhs² - kN = a*Q(x) */
 			mpz_mul(Qfile, lhs, lhs);
 			mpz_sub(Qfile, Qfile, qs_data->n);
-			mpz_out_str(fp, 10, lhs);
-			fprintf(fp, ";");
-			mpz_out_str(fp, 10, Qfile);
-			fprintf(fp, ";");
-			mpz_out_str(fp, 10, qs_data->roota);
-			fprintf(fp, "\n");
+			relstore_add_full(lhs, Qfile, qs_data->roota);
 			mpz_clears(lhs, Qfile, NULL);
 			add_writeFullRel_time(omp_get_wtime() - _tw0);
 			if(qs_data->n_BSuaves==qs_data->mat.n_rows){

@@ -32,12 +32,27 @@
  * eso el cutoff se queda chico — solo los p<=31, como msieve. */
 #define SMALL_PRIME_CORR 1.3
 
+/* Entry compacta para el inner loop de criba: p, logp y dos posiciones con
+ * carry-forward entre bloques (evita la división por bloque). 16 bytes. */
+typedef struct {
+    uint32_t p;
+    uint32_t nloc1;   /* posición de root1 dentro del bloque actual (carry) */
+    uint32_t nloc2;   /* posición de root2, o UINT32_MAX = raíz única/inválida */
+    uint8_t  logp;
+    uint8_t  _pad[3];
+} packed_sieve_t;
+
 extern int CORES;
 
 /* Calculado una vez: nº de primos iniciales con p <= SMALL_PRIME_MAX y la
  * corrección de log esperada que aportarían a una posición suave. */
 static long g_sieve_skip = -1;
 static unsigned int g_small_correction = 0;
+
+/* Caches persistentes entre llamadas a sieve_mpqs (una factorización = tamaño fijo). */
+static packed_sieve_t *g_psieve       = NULL;
+static long            g_psieve_cap   = 0;
+static uint8_t        *g_sieve_block  = NULL;
 
 /* Acumuladores para diagnóstico del bottleneck del sieve */
 static double g_t_sieve_cutoff = 0;
@@ -454,13 +469,38 @@ void sieve_mpqs(qs_struct *qs_data, unsigned long xmax,
         sieve_update_roots(qs_data, sieve_interval);
     double _t2 = omp_get_wtime();
     g_t_sieve_roots += _t2 - _t1;
-    
-    /* Array temporal de criba: solo un bloque de 32KB en stack o malloc alineado */
-    uint8_t *sieve_block = (uint8_t *)malloc(SIEVE_BLOCK_SIZE);
-    if (!sieve_block) {
-        fprintf(stderr, "Error al asignar sieve_block\n");
-        exit(EXIT_FAILURE);
+
+    /* Array compacto con carry-forward de raíces: evita recalcular el offset
+     * por división al inicio de cada bloque. Reutilizado entre llamadas;
+     * solo se reasigna si el FB creció (nunca ocurre dentro de una factorización). */
+    long n_sp = qs_data->base.length - g_sieve_skip;
+    if (n_sp > g_psieve_cap) {
+        free(g_psieve);
+        g_psieve     = (packed_sieve_t *)malloc(n_sp * sizeof(packed_sieve_t));
+        g_psieve_cap = n_sp;
+        if (!g_psieve) { fprintf(stderr, "Error al asignar psieve\n"); exit(EXIT_FAILURE); }
     }
+    packed_sieve_t *psieve = g_psieve;
+    {
+        sieve_prime *sp = qs_data->base.sp + g_sieve_skip;
+        for (long i = 0; i < n_sp; i++, sp++) {
+            uint32_t r1 = sp->root1;
+            uint32_t r2 = sp->root2;
+            /* Ordenar r1 ≤ r2; UINT32_MAX señaliza raíz inválida/única */
+            if (r2 != UINT32_MAX && r2 < r1) { uint32_t t = r1; r1 = r2; r2 = t; }
+            psieve[i].p     = sp->p;
+            psieve[i].logp  = sp->logp;
+            psieve[i].nloc1 = r1;
+            psieve[i].nloc2 = r2;
+        }
+    }
+
+    /* Bloque de criba: asignado una sola vez, reutilizado entre llamadas. */
+    if (!g_sieve_block) {
+        g_sieve_block = (uint8_t *)malloc(SIEVE_BLOCK_SIZE);
+        if (!g_sieve_block) { fprintf(stderr, "Error al asignar sieve_block\n"); exit(EXIT_FAILURE); }
+    }
+    uint8_t *sieve_block = g_sieve_block;
     
     /* Buffer de candidatos */
     unsigned long capacity = sieve_interval / 20 + 256;
@@ -479,44 +519,46 @@ void sieve_mpqs(qs_struct *qs_data, unsigned long xmax,
         unsigned long block_len = block_end - block_start;
 
         double _tl0 = omp_get_wtime();
-        /* Inicializar bloque con cutoff - 1 (como msieve) */
-        memset(sieve_block, (uint8_t)(cutoff - 1), block_len);
-        
-        /* Cribar: restar logprime en cada posición. Se saltan los primos
-         * chicos (índices [0, g_sieve_skip)) ya descontados en el umbral.
-         * Itera el array compacto sieve_prime (denso en cache). */
-        for (long i = g_sieve_skip; i < qs_data->base.length; i++) {
-            sieve_prime *sp = &qs_data->base.sp[i];
-            uint32_t p = sp->p;
-            if (p < 2) continue;
-            uint8_t logp = sp->logp;
+        /* Inicializar bloque completo (incluso bytes más allá del intervalo real
+         * en el último bloque parcial: se criban pero nunca se escanean). */
+        memset(sieve_block, (uint8_t)(cutoff - 1), SIEVE_BLOCK_SIZE);
 
-            /* root1: primera posición dentro de este bloque */
-            if (sp->root1 != UINT32_MAX) {
-                uint32_t r1 = sp->root1;
-                /* Avanzar r1 al rango [block_start, block_start + p) */
-                if (r1 < block_start) {
-                    unsigned long skip = (block_start - r1 + p - 1) / p;
-                    r1 += (uint32_t)(skip * p);
-                }
-                for (uint32_t pos = r1; pos < block_end; pos += p) {
-                    sieve_block[pos - block_start] -= logp;
-                }
-            }
+        /* Cribar con carry-forward: psieve[i].nloc1/nloc2 ya apuntan al inicio
+         * correcto dentro de este bloque — sin división.
+         *   Two-root path: loop fusionado root1+root2 al estilo msieve.
+         *   Single-root path: loop simple (primos que dividen 'a', ≤ s ≤ 9). */
+        for (long i = 0; i < n_sp; i++) {
+            uint32_t p    = psieve[i].p;
+            uint8_t  logp = psieve[i].logp;
+            uint32_t r1   = psieve[i].nloc1;
+            uint32_t r2   = psieve[i].nloc2;
 
-            /* root2 */
-            if (sp->root2 != UINT32_MAX && sp->root2 != sp->root1) {
-                uint32_t r2 = sp->root2;
-                if (r2 < block_start) {
-                    unsigned long skip = (block_start - r2 + p - 1) / p;
-                    r2 += (uint32_t)(skip * p);
+            if (r2 == UINT32_MAX) {
+                /* raíz única: loop simple */
+                while (r1 < SIEVE_BLOCK_SIZE) {
+                    sieve_block[r1] -= logp;
+                    r1 += p;
                 }
-                for (uint32_t pos = r2; pos < block_end; pos += p) {
-                    sieve_block[pos - block_start] -= logp;
+                psieve[i].nloc1 = r1 - SIEVE_BLOCK_SIZE;
+            } else {
+                /* dos raíces ordenadas: while fusionado, luego residual y swap */
+                while (r2 < SIEVE_BLOCK_SIZE) {
+                    sieve_block[r1] -= logp;
+                    sieve_block[r2] -= logp;
+                    r1 += p;
+                    r2 += p;
                 }
+                if (r1 < SIEVE_BLOCK_SIZE) {
+                    uint32_t tmp = r2;
+                    sieve_block[r1] -= logp;
+                    r2 = r1 + p;
+                    r1 = tmp;
+                }
+                psieve[i].nloc1 = r1 - SIEVE_BLOCK_SIZE;
+                psieve[i].nloc2 = r2 - SIEVE_BLOCK_SIZE;
             }
         }
-        
+
         double _tl1 = omp_get_wtime();
         g_t_sieve_loop += _tl1 - _tl0;
 
@@ -560,7 +602,6 @@ void sieve_mpqs(qs_struct *qs_data, unsigned long xmax,
         g_t_sieve_scan += omp_get_wtime() - _tl1;
     }
 
-    free(sieve_block);
     *out_indices = indices;
     *out_count = count;
 }

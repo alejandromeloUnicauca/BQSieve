@@ -7,7 +7,7 @@ CFLAGS= -O2 -fopenmp -std=c11 -Wall -MMD -MP
 LDFLAGS = -lmpfr -lgmp -lm
 
 # Lista de archivos fuente
-SRCS = B_QSieve.c sieve.c polynomial.c factoring.c
+SRCS = B_QSieve.c sieve.c polynomial.c factoring.c linalg.c
 
 # Lista de objetos generados a partir de los archivos fuente
 OBJS = $(SRCS:.c=.o)
@@ -16,33 +16,20 @@ OBJS = $(SRCS:.c=.o)
 TARGET = B_QSieve
 DEBUG_TARGET = B_QSieve_debug
 
-# Archivo fuente adicional y su objeto
-MULPOLI_SRC = mulPoli.c
-MULPOLI_OBJ = mulPoli.o
-MULPOLI_TARGET = mulPoli
-
-# Solver GF(2) nativo (Block Lanczos)
+# Solver GF(2) nativo (standalone, útil para depuración)
 SOLVE_SRCS = solve_matrix.c linalg.c
 SOLVE_OBJS = solve_matrix.o linalg.o
 SOLVE_TARGET = solve_matrix
 
-# Regla por defecto para compilar en modo normal
-all: $(TARGET) $(MULPOLI_TARGET) $(SOLVE_TARGET)
+# Regla por defecto
+all: $(TARGET) $(SOLVE_TARGET)
 
 # Regla para compilar el ejecutable en modo normal
 $(TARGET): $(OBJS)
 	$(CC) -o $@ $^ $(CFLAGS) $(LDFLAGS)
 
-$(MULPOLI_TARGET): $(MULPOLI_OBJ)
-	@echo "Compilando $(MULPOLI_TARGET) con $(MULPOLI_OBJ)"
-	$(CC) -o $@ $^ $(CFLAGS) $(LDFLAGS)
-
 $(SOLVE_TARGET): $(SOLVE_OBJS)
 	$(CC) -o $@ $^ $(CFLAGS) $(LDFLAGS)
-
-# Regla específica para compilar mulPoli.o
-$(MULPOLI_OBJ): $(MULPOLI_SRC)
-	$(CC) -c $< -o $@ $(CFLAGS)
 
 solve_matrix.o: solve_matrix.c linalg.h
 	$(CC) -c $< -o $@ $(CFLAGS)
@@ -56,18 +43,18 @@ linalg.o: linalg.c linalg.h
 
 # Regla para compilar en modo depuración (sin optimización, con símbolos)
 debug: CFLAGS += -O0 -ggdb3
-debug: $(DEBUG_TARGET) $(MULPOLI_TARGET) $(SOLVE_TARGET)
+debug: $(DEBUG_TARGET) $(SOLVE_TARGET)
 
 $(DEBUG_TARGET): $(OBJS)
 	$(CC) -o $@ $^ $(CFLAGS) $(LDFLAGS)
 
 # Incluir los archivos de dependencias generados por -MMD (si existen)
--include $(OBJS:.o=.d) $(MULPOLI_OBJ:.o=.d) $(SOLVE_OBJS:.o=.d)
+-include $(OBJS:.o=.d) $(SOLVE_OBJS:.o=.d)
 
 # Regla para limpiar archivos generados
 clean:
-	rm -f $(TARGET) $(DEBUG_TARGET) $(MULPOLI_TARGET) $(SOLVE_TARGET) \
-	      $(OBJS) $(MULPOLI_OBJ) $(SOLVE_OBJS) \
-	      $(OBJS:.o=.d) $(MULPOLI_OBJ:.o=.d) $(SOLVE_OBJS:.o=.d)
+	rm -f $(TARGET) $(DEBUG_TARGET) $(SOLVE_TARGET) \
+	      $(OBJS) $(SOLVE_OBJS) \
+	      $(OBJS:.o=.d) $(SOLVE_OBJS:.o=.d)
 
 .PHONY: clean

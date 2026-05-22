@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 200809L
 #include <ctype.h>
 #include <gmp.h>
 #include <getopt.h>
@@ -11,7 +12,143 @@
 #include "sieve.h"
 #include "polynomial.h"
 #include "factoring.h"
+#include "linalg.h"
 #include <time.h>
+
+/* ---- Helpers para la fase algebraica integrada -------------------------- */
+
+/* Producto en árbol balanceado in-place (O(N log N)). */
+static void tree_product(mpz_t *arr, size_t count, mpz_t result) {
+    if (count == 0) { mpz_set_ui(result, 1); return; }
+    while (count > 1) {
+        size_t pairs = count / 2;
+        for (size_t i = 0; i < pairs; i++)
+            mpz_mul(arr[i], arr[2*i], arr[2*i+1]);
+        if (count & 1) { mpz_swap(arr[pairs], arr[count-1]); count = pairs+1; }
+        else count = pairs;
+    }
+    mpz_set(result, arr[0]);
+}
+
+/* Convierte la matriz densa BQSieve a sparse_matrix_t para linalg. */
+static void matrix_to_sparse(const matrix *m, sparse_matrix_t *s) {
+    s->n_rows = m->n_rows;
+    s->n_cols = m->n_cols;
+    int nnz = 0;
+    for (int i = 0; i < m->n_rows; i++)
+        for (int j = 0; j < m->n_cols; j++)
+            if (m->data[i][j]) nnz++;
+    s->row_data  = malloc(nnz * sizeof(int));
+    s->row_start = malloc((m->n_rows + 1) * sizeof(int));
+    s->row_len   = malloc(m->n_rows * sizeof(int));
+    int pos = 0;
+    for (int i = 0; i < m->n_rows; i++) {
+        s->row_start[i] = pos;
+        int cnt = 0;
+        for (int j = 0; j < m->n_cols; j++)
+            if (m->data[i][j]) { s->row_data[pos++] = j; cnt++; }
+        s->row_len[i] = cnt;
+    }
+    s->row_start[m->n_rows] = pos;
+}
+
+static void strip_ks_mult(mpz_t x, unsigned int k) {
+    if (k <= 1) return;
+    mpz_t g; mpz_init(g);
+    mpz_gcd_ui(g, x, k);
+    while (mpz_cmp_ui(g, 1) > 0) {
+        mpz_divexact(x, x, g);
+        mpz_gcd_ui(g, x, k);
+    }
+    mpz_clear(g);
+}
+
+/* Fase de raíz cuadrada: porta process_polynomial() + mulPoli.c a C puro.
+ * Itera hasta 63 soluciones nulas; devuelve 1 al encontrar los factores. */
+static int sqrt_phase(uint64_t **solutions, int n_sol, int n_rows,
+                      mpz_t N_orig, unsigned int ks_mult,
+                      mpz_t p_out, mpz_t q_out) {
+    relation_store_t *store = relstore_get();
+    int n = n_rows < store->count ? n_rows : store->count;
+
+    for (int k = 0; k < n_sol; k++) {
+        mpz_t *q_arr = NULL;
+        size_t q_count = 0, q_cap = 0;
+        mpz_t mulX; mpz_init(mulX); mpz_set_ui(mulX, 1);
+
+        for (int j = 0; j < n; j++) {
+            if (!((solutions[k][j/64] >> (j % 64)) & 1ULL)) continue;
+            rel_entry_t *rel = &store->entries[j];
+
+            /* Añadir qfile al producto */
+            if (q_count == q_cap) {
+                q_cap = q_cap ? q_cap * 2 : 64;
+                q_arr = realloc(q_arr, q_cap * sizeof(mpz_t));
+            }
+            mpz_init_set_str(q_arr[q_count++], rel->qfile, 10);
+
+            /* Añadir cada roota dos veces (corrige el factor 'a' de SIQS) */
+            if (rel->rootas) {
+                char *copy = strdup(rel->rootas);
+                char *tok  = strtok(copy, ",");
+                while (tok) {
+                    while (*tok == ' ') tok++;
+                    if (*tok) {
+                        for (int r = 0; r < 2; r++) {
+                            if (q_count == q_cap) {
+                                q_cap *= 2;
+                                q_arr = realloc(q_arr, q_cap * sizeof(mpz_t));
+                            }
+                            mpz_init_set_str(q_arr[q_count++], tok, 10);
+                        }
+                    }
+                    tok = strtok(NULL, ",");
+                }
+                free(copy);
+            }
+
+            /* Acumular lhs en mulX mod N_orig */
+            mpz_t tmp; mpz_init(tmp);
+            mpz_set_str(tmp, rel->lhs, 10);
+            mpz_mul(mulX, mulX, tmp);
+            mpz_mod(mulX, mulX, N_orig);
+            mpz_clear(tmp);
+        }
+
+        if (q_count == 0) { mpz_clear(mulX); continue; }
+
+        mpz_t qx; mpz_init(qx);
+        tree_product(q_arr, q_count, qx);
+        for (size_t i = 0; i < q_count; i++) mpz_clear(q_arr[i]);
+        free(q_arr);
+        if (mpz_sgn(qx) < 0) mpz_neg(qx, qx);
+
+        mpz_t sqr, gcd, res, p_try, q_try;
+        mpz_inits(sqr, gcd, res, p_try, q_try, NULL);
+        mpz_sqrt(sqr, qx);
+        mpz_clear(qx);
+
+        mpz_sub(res, sqr, mulX);
+        mpz_gcd(gcd, res, N_orig);
+        mpz_set(p_try, gcd);
+        strip_ks_mult(p_try, ks_mult);
+
+        mpz_add(res, sqr, mulX);
+        mpz_gcd(gcd, res, N_orig);
+        mpz_set(q_try, gcd);
+        strip_ks_mult(q_try, ks_mult);
+
+        int found = mpz_cmp_ui(p_try, 1) != 0 && mpz_cmp_ui(q_try, 1) != 0
+                    && mpz_cmp(p_try, N_orig) != 0 && mpz_cmp(q_try, N_orig) != 0;
+        if (found) {
+            mpz_set(p_out, p_try);
+            mpz_set(q_out, q_try);
+        }
+        mpz_clears(sqr, gcd, res, p_try, q_try, mulX, NULL);
+        if (found) return 1;
+    }
+    return 0;
+}
 
 
 void createBlocks(int n, qs_struct * qs_data);
@@ -154,17 +291,21 @@ static unsigned int choose_multiplier(mpz_t n, unsigned int fb_size) {
 
 int main(int argc, char **argv)
 {
-	int flagd = 0; 
+	double t_main_start = omp_get_wtime();
+
+	int flagd = 0;
 	int flagh = 0;
 	char *hdvalue = NULL;
 	char *bvalue = NULL;
 	char *cvalue = NULL;
-	
+
 	parseArgs(argc, argv, &flagd, &flagh, &hdvalue, &bvalue, &cvalue);
-	
+
 	//Declaracion de variables
 	qs_struct qs_data;
 	clock_t t_inicio, t_final;
+	mpz_t n_orig;
+	mpz_init(n_orig); /* N original sin multiplicador k, para la fase sqrt */
 
 	//Inicializar campos a valores seguros
 	qs_data.n_BSuaves = 0;
@@ -240,6 +381,9 @@ int main(int argc, char **argv)
 	if(VERBOSE) printf("Parámetros de criba: bits=%u, fb_size=%u, sieve_size=%u, large_mult=%u\n",
 		qs_data.sieve_params.bits, qs_data.sieve_params.fb_size,
 		qs_data.sieve_params.sieve_size, qs_data.sieve_params.large_mult);
+
+	// Guardar N original antes de multiplicar por k (la fase sqrt lo necesita)
+	mpz_set(n_orig, qs_data.n);
 
 	// Elegir multiplicador Knuth-Schroeppel
 	qs_data.multiplier = choose_multiplier(qs_data.n, qs_data.sieve_params.fb_size);
@@ -330,7 +474,7 @@ int main(int argc, char **argv)
 	t_inicio = clock();
 	double t_poly_wall0 = omp_get_wtime();
 	crearMatrizNula(&qs_data);
-	polinomio_open();
+	relstore_init();
 
 	int res = 1;
 	qs_data.intervalo.Qxi = NULL;
@@ -424,7 +568,6 @@ int main(int argc, char **argv)
 		}
 		prev_n_BSuaves = qs_data.n_BSuaves;
 	}
-	polinomio_close();
 	if(VERBOSE) printf("Polinomios procesados: %ld\n", polinomio_count);
 	if(VERBOSE) fflush(stdout);
 	if(VERBOSE) printf("Numeros B_Suaves encontrados:%ld\n",qs_data.n_BSuaves);
@@ -455,29 +598,50 @@ int main(int argc, char **argv)
 	}
 	
 	
-	if(VERBOSE) printf("Escribiendo matriz...");
-	imprimirMatriz(qs_data.mat);
+	/* === Álgebra lineal === */
+	if(VERBOSE) printf("Resolviendo sistema lineal GF(2)...\n");
+	double t_linalg0 = omp_get_wtime();
+	sparse_matrix_t smat;
+	matrix_to_sparse(&qs_data.mat, &smat);
 
-	// Guardar roota en archivo para que mulPoli lo use
-	FILE *fr = fopen("roota.txt", "w");
-	if (fr) {
-		mpz_out_str(fr, 10, qs_data.roota);
-		fprintf(fr, "\n");
-		fclose(fr);
-	}
+	int n_words = (qs_data.mat.n_rows + 63) / 64;
+	uint64_t *solutions[LINALG_N_SOLUTIONS];
+	for (int k = 0; k < LINALG_N_SOLUTIONS; k++)
+		solutions[k] = calloc(n_words, sizeof(uint64_t));
+	int n_sol = 0;
+	linalg_block_lanczos(&smat, solutions, &n_sol);
+	linalg_free_sparse(&smat);
+	double t_linalg = omp_get_wtime() - t_linalg0;
+	if(VERBOSE) printf("Algebra lineal: %.3fs, %d soluciones\n", t_linalg, n_sol);
 
-	// Guardar multiplicador para que mulPoli divida los factores espúreos
-	if (qs_data.multiplier > 1) {
-		FILE *fm = fopen("multiplier.txt", "w");
-		if (fm) {
-			fprintf(fm, "%u\n", qs_data.multiplier);
-			fclose(fm);
-		}
+	/* === Fase de raíz cuadrada === */
+	if(VERBOSE) printf("Calculando raíces cuadradas...\n");
+	double t_sqrt0 = omp_get_wtime();
+	mpz_t p_fact, q_fact;
+	mpz_inits(p_fact, q_fact, NULL);
+	int factored = sqrt_phase(solutions, n_sol, qs_data.mat.n_rows,
+	                          n_orig, qs_data.multiplier, p_fact, q_fact);
+	double t_sqrt = omp_get_wtime() - t_sqrt0;
+	if(VERBOSE) printf("Fase sqrt: %.3fs\n", t_sqrt);
+
+	/* Liberar soluciones */
+	for (int k = 0; k < LINALG_N_SOLUTIONS; k++)
+		free(solutions[k]);
+
+	/* === Resultado === */
+	double t_total = omp_get_wtime() - t_main_start;
+	if (factored) {
+		gmp_printf("N:%Zd\n", n_orig);
+		gmp_printf("P:%Zd\n", p_fact);
+		gmp_printf("Q:%Zd\n", q_fact);
+	} else {
+		printf("No se encontraron factores\n");
 	}
-	
-	//Liberar Memoria
-	freeStruct(&qs_data); 
-	
+	printf("Tiempo total: %.3fs\n", t_total);
+
+	mpz_clears(p_fact, q_fact, n_orig, NULL);
+	relstore_free();
+	freeStruct(&qs_data);
 	exit(EXIT_SUCCESS);
 }
 
