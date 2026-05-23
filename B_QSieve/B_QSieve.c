@@ -85,34 +85,22 @@ static int sqrt_phase(uint64_t **solutions, int n_sol, int n_rows,
                 q_cap = q_cap ? q_cap * 2 : 64;
                 q_arr = realloc(q_arr, q_cap * sizeof(mpz_t));
             }
-            mpz_init_set_str(q_arr[q_count++], rel->qfile, 10);
+            mpz_init_set(q_arr[q_count++], rel->qfile_mpz);
 
             /* Añadir cada roota dos veces (corrige el factor 'a' de SIQS) */
-            if (rel->rootas) {
-                char *copy = strdup(rel->rootas);
-                char *tok  = strtok(copy, ",");
-                while (tok) {
-                    while (*tok == ' ') tok++;
-                    if (*tok) {
-                        for (int r = 0; r < 2; r++) {
-                            if (q_count == q_cap) {
-                                q_cap *= 2;
-                                q_arr = realloc(q_arr, q_cap * sizeof(mpz_t));
-                            }
-                            mpz_init_set_str(q_arr[q_count++], tok, 10);
-                        }
+            for (int ri = 0; ri < rel->n_roota; ri++) {
+                for (int rep = 0; rep < 2; rep++) {
+                    if (q_count == q_cap) {
+                        q_cap *= 2;
+                        q_arr = realloc(q_arr, q_cap * sizeof(mpz_t));
                     }
-                    tok = strtok(NULL, ",");
+                    mpz_init_set(q_arr[q_count++], rel->roota_mpz[ri]);
                 }
-                free(copy);
             }
 
             /* Acumular lhs en mulX mod N_orig */
-            mpz_t tmp; mpz_init(tmp);
-            mpz_set_str(tmp, rel->lhs, 10);
-            mpz_mul(mulX, mulX, tmp);
+            mpz_mul(mulX, mulX, rel->lhs_mpz);
             mpz_mod(mulX, mulX, N_orig);
-            mpz_clear(tmp);
         }
 
         if (q_count == 0) { mpz_clear(mulX); continue; }
@@ -155,7 +143,7 @@ void createBlocks(int n, qs_struct * qs_data);
 void crearMatrizNula(qs_struct * qs_data);
 void imprimirMatriz(matrix matriz);  
 void getSieveParams(mpz_t n, sieve_param_t *params);
-long generatePrimesBase(mpz_t n, long bound, prime * primes);
+long generatePrimesBase(mpz_t n, long bound, prime *primes, unsigned long *raw_primes, long n_raw_primes, FILE *fp);
 void freeStruct(qs_struct * qs_data);
 void parseArgs(int argc, char **argv, int *flagd, int *flagh, char **hdvalue, char **bvalue, char **cvalue);
 void usage();
@@ -184,7 +172,8 @@ static const unsigned int ks_mult_list[] = {
 };
 #define NUM_KS_MULTS (sizeof(ks_mult_list)/sizeof(ks_mult_list[0]))
 
-static unsigned int choose_multiplier(mpz_t n, unsigned int fb_size) {
+static unsigned int choose_multiplier(mpz_t n, unsigned int fb_size,
+                                      unsigned long *raw_primes, long n_raw_primes) {
     unsigned int i, j;
     unsigned int num_primes;
     double best_score;
@@ -196,29 +185,11 @@ static unsigned int choose_multiplier(mpz_t n, unsigned int fb_size) {
     num_primes = 2 * fb_size;
     if (num_primes > NUM_TEST_PRIMES_KS)
         num_primes = NUM_TEST_PRIMES_KS;
+    if ((long)num_primes > n_raw_primes)
+        num_primes = (unsigned int)n_raw_primes;
 
-    /* Leer primos del archivo primes.txt */
-    FILE *fp = fopen("primes.txt", "r");
-    if (!fp) {
-        fprintf(stderr, "choose_multiplier: falta primes.txt\n");
-        return 1;
-    }
-
-    /* Leer hasta num_primes primos en un buffer */
-    unsigned long *test_primes = (unsigned long *)malloc(num_primes * sizeof(unsigned long));
-    unsigned int n_read = 0;
-    char buf[BUFSIZ];
-    while (n_read < num_primes && fgets(buf, BUFSIZ, fp) != NULL) {
-        char *ptr = buf;
-        while (*ptr && (*ptr == ' ' || *ptr == '\t' || *ptr == '\n')) ptr++;
-        if (*ptr == '\0') continue;
-        unsigned long p = strtoul(ptr, NULL, 10);
-        if (p >= 2) {
-            test_primes[n_read++] = p;
-        }
-    }
-    fclose(fp);
-    num_primes = n_read;
+    /* Usar el array preloaded — no re-abrir primes.txt */
+    unsigned long *test_primes = raw_primes;
 
     /* Paso 1: evaluar la contribución del primo 2 y penalizar por tamaño del multiplicador */
     unsigned long n_mod_8 = mpz_fdiv_ui(n, 8);
@@ -274,8 +245,6 @@ static unsigned int choose_multiplier(mpz_t n, unsigned int fb_size) {
             }
         }
     }
-
-    free(test_primes);
 
     /* Paso 3: elegir el multiplicador con mejor score (más negativo = mejor) */
     best_score = 1000.0;
@@ -337,6 +306,9 @@ int main(int argc, char **argv)
 	qs_data.large_prime_bound = 0;
 	qs_data.large_prime_bound2 = 0;
 	qs_data.max_fb2 = 0;
+	qs_data.Xi_pool = NULL;
+	qs_data.Qxi_pool = NULL;
+	qs_data.Xi_Qxi_pool_cap = 0;
 	qs_data.n_dlp_stored = 0;
 	qs_data.n_dlp_combined = 0;
 	qs_data.multiplier = 1;
@@ -385,8 +357,25 @@ int main(int argc, char **argv)
 	// Guardar N original antes de multiplicar por k (la fase sqrt lo necesita)
 	mpz_set(n_orig, qs_data.n);
 
+	// Leer solo NUM_TEST_PRIMES_KS primos para choose_multiplier; fp queda abierto para generatePrimesBase
+	unsigned long *raw_primes = NULL;
+	long n_raw_primes = 0;
+	FILE *fp_primes = fopen("primes.txt", "r");
+	if (!fp_primes) { fprintf(stderr, "Falta primes.txt\n"); exit(EXIT_FAILURE); }
+	{
+		raw_primes = (unsigned long *)malloc(NUM_TEST_PRIMES_KS * sizeof(unsigned long));
+		char buf[BUFSIZ];
+		while (n_raw_primes < NUM_TEST_PRIMES_KS && fgets(buf, BUFSIZ, fp_primes)) {
+			char *ptr = buf;
+			while (*ptr && isspace((unsigned char)*ptr)) ptr++;
+			if (!*ptr) continue;
+			unsigned long p = strtoul(ptr, NULL, 10);
+			if (p >= 2) raw_primes[n_raw_primes++] = p;
+		}
+	}
+
 	// Elegir multiplicador Knuth-Schroeppel
-	qs_data.multiplier = choose_multiplier(qs_data.n, qs_data.sieve_params.fb_size);
+	qs_data.multiplier = choose_multiplier(qs_data.n, qs_data.sieve_params.fb_size, raw_primes, n_raw_primes);
 	if(VERBOSE) printf("Multiplicador Knuth-Schroeppel: k=%u\n", qs_data.multiplier);
 	if (qs_data.multiplier > 1) {
 		mpz_mul_ui(qs_data.n, qs_data.n, qs_data.multiplier);
@@ -400,8 +389,10 @@ int main(int argc, char **argv)
 	
 	t_inicio = clock();
 	if(VERBOSE) printf("Generando base de primos...\n");
-	long residuos = generatePrimesBase(qs_data.n,qs_data.base.length,qs_data.base.primes);
+	long residuos = generatePrimesBase(qs_data.n, qs_data.base.length, qs_data.base.primes, raw_primes, n_raw_primes, fp_primes);
 	t_final = clock();
+	fclose(fp_primes); fp_primes = NULL;
+	free(raw_primes); raw_primes = NULL;
 	// ajustar longitud real de la base al número de residuos encontrados
 	qs_data.base.length = residuos;
 	// reducir buffer al tamaño real
@@ -412,6 +403,10 @@ int main(int argc, char **argv)
 
 	// Precomputar raíces sqrt(N) mod p y campos nativos (uint32/uint8)
 	sieve_precompute_roots(&qs_data);
+
+	// Pool reutilizable para exp_vec — un solo alloc por factorización
+	qs_data.exp_vec_pool = (int *)malloc((size_t)qs_data.base.length * sizeof(int));
+
 
 	//Intervalo de criba: sieve_size de la tabla msieve × SIEVE_MULT (flag -s)
 	mpz_set_ui(qs_data.intervalo.length,
@@ -444,9 +439,16 @@ int main(int argc, char **argv)
 		}
 	}
 
+	// Precomputar cutoff_config = 1.5 * log2(LP_bound) — constante durante la factorización
+	{
+		unsigned int _err = (qs_data.large_prime_bound > 1) ?
+			(unsigned int)(log2((double)qs_data.large_prime_bound) + 0.5) : 0;
+		qs_data.sieve_cutoff_config = (unsigned int)(1.5 * _err);
+	}
+
 	double segundos = (double) (t_final-t_inicio)/CLOCKS_PER_SEC;
 	if(VERBOSE) printf("tiempo de creacion de la base:%fs\n",segundos);
-	
+
 	//Crear bloques de la base
 	if(qs_data.blocks.length > 0){
 		int blockLength = ceil((float)qs_data.base.length/qs_data.blocks.length);
@@ -464,6 +466,15 @@ int main(int argc, char **argv)
 
     // xmax define el rango de criba [-xmax..+xmax], tomado del intervalo del polinomio
     unsigned long xmax = mpz_get_ui(qs_data.intervalo.length);
+
+    // OPT-3: pool pre-alloc para Xi/Qxi — evita malloc/free/init/clear por polinomio
+    qs_data.Xi_Qxi_pool_cap = 2 * xmax;
+    qs_data.Xi_pool  = (mpz_t *)malloc(2 * xmax * sizeof(mpz_t));
+    qs_data.Qxi_pool = (mpz_t *)malloc(2 * xmax * sizeof(mpz_t));
+    for (unsigned long _pi = 0; _pi < 2 * xmax; _pi++) {
+        mpz_init(qs_data.Xi_pool[_pi]);
+        mpz_init(qs_data.Qxi_pool[_pi]);
+    }
 
     double end_time = omp_get_wtime();
     double segundosCriba = end_time - start_time;
@@ -505,7 +516,6 @@ int main(int argc, char **argv)
 		t_sieve += _t1 - _t0;
 
 		if (n_candidates == 0) {
-			free(sieve_candidates);
 			polinomio_count++;
 			continue;
 		}
@@ -514,37 +524,19 @@ int main(int argc, char **argv)
 		unsigned long npos = n_candidates;
 		n_cand_total += (long)npos;
 
-		// Liberar Xi y Qxi previos
-		if (qs_data.intervalo.Xi != NULL) {
-			for (unsigned long i = 0; i < qs_data.intervalo.length_Xi; i++)
-				mpz_clear(qs_data.intervalo.Xi[i]);
-			free(qs_data.intervalo.Xi);
-			qs_data.intervalo.Xi = NULL;
-		}
-		if (qs_data.intervalo.Qxi != NULL) {
-			for (unsigned long i = 0; i < qs_data.intervalo.length_Qxi; i++)
-				mpz_clear(qs_data.intervalo.Qxi[i]);
-			free(qs_data.intervalo.Qxi);
-			qs_data.intervalo.Qxi = NULL;
-		}
-
-		// Asignar nuevos arrays
-		qs_data.intervalo.Xi = (mpz_t *)malloc(npos * sizeof(mpz_t));
-		qs_data.intervalo.Qxi = (mpz_t *)malloc(npos * sizeof(mpz_t));
-		qs_data.intervalo.length_Xi = npos;
+		// OPT-3: reusar pool Xi/Qxi — no malloc/free/init/clear por polinomio
+		qs_data.intervalo.Xi  = qs_data.Xi_pool;
+		qs_data.intervalo.Qxi = qs_data.Qxi_pool;
+		qs_data.intervalo.length_Xi  = npos;
 		qs_data.intervalo.length_Qxi = npos;
 
 		_t0 = omp_get_wtime();
 		for (unsigned long i = 0; i < npos; i++) {
-			mpz_init(qs_data.intervalo.Xi[i]);
-			mpz_set_si(qs_data.intervalo.Xi[i], sieve_candidates[i]);
-			mpz_init(qs_data.intervalo.Qxi[i]);
-			eval_mpqs_Qx(&qs_data, qs_data.intervalo.Xi[i], qs_data.intervalo.Qxi[i]);
+			mpz_set_si(qs_data.Xi_pool[i], sieve_candidates[i]);
+			eval_mpqs_Qx(&qs_data, qs_data.Xi_pool[i], qs_data.Qxi_pool[i]);
 		}
 		_t1 = omp_get_wtime();
 		t_evalQ += _t1 - _t0;
-
-		free(sieve_candidates);
 
 		polinomio_count++;
 		_t0 = omp_get_wtime();
@@ -568,6 +560,9 @@ int main(int argc, char **argv)
 		}
 		prev_n_BSuaves = qs_data.n_BSuaves;
 	}
+	// OPT-3: Xi/Qxi apuntan al pool, no al heap propio — limpiar para evitar double-free
+	qs_data.intervalo.Xi  = NULL;
+	qs_data.intervalo.Qxi = NULL;
 	if(VERBOSE) printf("Polinomios procesados: %ld\n", polinomio_count);
 	if(VERBOSE) fflush(stdout);
 	if(VERBOSE) printf("Numeros B_Suaves encontrados:%ld\n",qs_data.n_BSuaves);
@@ -761,6 +756,20 @@ void freeStruct(qs_struct * qs_data){
 
 	free(qs_data->base.primes);
 	free(qs_data->base.sp);
+	free(qs_data->exp_vec_pool);
+	qs_data->exp_vec_pool = NULL;
+
+	// OPT-3: liberar pool Xi/Qxi
+	if (qs_data->Xi_pool) {
+		for (unsigned long _pi = 0; _pi < qs_data->Xi_Qxi_pool_cap; _pi++) {
+			mpz_clear(qs_data->Xi_pool[_pi]);
+			mpz_clear(qs_data->Qxi_pool[_pi]);
+		}
+		free(qs_data->Xi_pool);
+		free(qs_data->Qxi_pool);
+		qs_data->Xi_pool = NULL;
+		qs_data->Qxi_pool = NULL;
+	}
 
 	//liberar memoria de los bloques
 	if(qs_data->blocks.length > 0){
@@ -847,58 +856,56 @@ void freeStruct(qs_struct * qs_data){
  * @return retorna el numero de 
  * residuos encontrados
  */
-long generatePrimesBase(mpz_t n, long bound, prime * primes){
-    long contRes = 0; // contador de residuos encontrados
-    long contPrimos = 0; // contador de primos leídos del archivo
+long generatePrimesBase(mpz_t n, long bound, prime *primes,
+                        unsigned long *raw_primes, long n_raw_primes, FILE *fp){
+    long contRes = 0;
+    long contPrimos = 0;
 
-    mpz_t p; // variable temporal para los primos del archivo
+    mpz_t p;
     mpz_init(p);
 
-    FILE * file; // file primes
-    // si el archivo primes.txt no existe termina
-    if ((file = fopen("primes.txt", "r")) == NULL) // open file
-    {
-        fprintf(stderr,"Falta archivo primes.txt\n");
-        exit(EXIT_FAILURE);
+    mpfr_t pTemp;
+    mpfr_init(pTemp);
+
+#define ACCEPT_PRIME(pval) do {                                        \
+        mpz_init(primes[contRes].value);                               \
+        mpfr_init(primes[contRes].log_value);                          \
+        mpz_set(primes[contRes].value, p);                             \
+        mpfr_set_z(pTemp, p, MPFR_RNDZ);                              \
+        mpfr_log(primes[contRes].log_value, pTemp, MPFR_RNDZ);        \
+        primes[contRes].llog_value =                                   \
+            mpfr_get_ui(primes[contRes].log_value, MPFR_RNDZ);        \
+        contRes++;                                                      \
+    } while(0)
+
+    /* Fase 1: primos ya cargados en memoria (para choose_multiplier) */
+    for (long idx = 0; idx < n_raw_primes && contRes < bound; idx++) {
+        mpz_set_ui(p, raw_primes[idx]);
+        contPrimos++;
+        if ((mpz_legendre(n, p) == 1) || (mpz_cmp_ui(p, 2) == 0))
+            ACCEPT_PRIME(raw_primes[idx]);
     }
 
-    char buf[BUFSIZ];
-    while (fgets(buf, BUFSIZ, file) != NULL) {
-        // eliminar espacios en blanco iniciales
-        char *ptr = buf;
-        while (*ptr && isspace((unsigned char)*ptr)) ptr++;
-        if (*ptr == '\0') continue;
-
-        if (mpz_set_str(p, ptr, 10) != 0) continue; // parse error
-
-        contPrimos++;
-
-        // si n es residuo cuadratico mod p se agrega
-        if ((mpz_legendre(n,p) == 1) || (mpz_cmp_ui(p,2) == 0)){
-            // asigno memoria a los valores de prime
-            mpz_init(primes[contRes].value);
-            mpfr_init(primes[contRes].log_value);
-
-            // almaceno el primo y el logaritmo del primo
-            mpz_set(primes[contRes].value,p);
-
-            mpfr_t pTemp;
-            mpfr_init(pTemp);
-            mpfr_set_z(pTemp,p,MPFR_RNDZ);
-            mpfr_log(primes[contRes].log_value, pTemp, MPFR_RNDZ); // ln(p)
-            primes[contRes].llog_value = mpfr_get_ui(primes[contRes].log_value,MPFR_RNDZ);
-
-            mpfr_clear(pTemp);
-
-            contRes++;
-
-            // parar cuando tengamos suficientes residuos cuadráticos
-            if (contRes >= bound) break;
+    /* Fase 2: streaming — leer del archivo hasta completar la base */
+    if (fp && contRes < bound) {
+        char buf[BUFSIZ];
+        while (contRes < bound && fgets(buf, BUFSIZ, fp)) {
+            char *ptr = buf;
+            while (*ptr && isspace((unsigned char)*ptr)) ptr++;
+            if (!*ptr) continue;
+            unsigned long pval = strtoul(ptr, NULL, 10);
+            if (pval < 2) continue;
+            mpz_set_ui(p, pval);
+            contPrimos++;
+            if ((mpz_legendre(n, p) == 1) || (mpz_cmp_ui(p, 2) == 0))
+                ACCEPT_PRIME(pval);
         }
     }
 
+#undef ACCEPT_PRIME
+
+    mpfr_clear(pTemp);
     mpz_clear(p);
-    fclose(file);
     if(VERBOSE) gmp_printf("Primo mas grande en la base: %Zd\n", primes[contRes-1].value);
     if(VERBOSE) printf("Primos leidos del archivo: %ld, residuos cuadraticos: %ld de %ld requeridos\n",
            contPrimos, contRes, bound);
@@ -913,7 +920,7 @@ long generatePrimesBase(mpz_t n, long bound, prime * primes){
 static const sieve_param_t prebuilt_params[] = {
 	{ 64,    100,  40,  1 * 65536},
 	{128,    450,  40,  1 * 65536},
-	{183,   2000,  40,  1 * 65536},
+	{183,   2000,  60,  1 * 65536},
 	{200,   3000,  50,  1 * 65536},
 	{212,   5400,  50,  3 * 65536},
 	{233,  10000, 100,  3 * 65536},

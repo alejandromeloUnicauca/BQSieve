@@ -187,6 +187,14 @@ typedef struct{
 	sieve_param_t sieve_params;
 	/** multiplicador Knuth-Schroeppel (k tal que factorizamos k*N) */
 	unsigned int multiplier;
+	/** pool reutilizable para exp_vec — evita calloc por candidato */
+	int *exp_vec_pool;
+	/** cutoff_config = 1.5 * log2(large_prime_bound), precomputado en main */
+	unsigned int sieve_cutoff_config;
+	/** pools reutilizables para Xi/Qxi — evita malloc/init/clear por polinomio */
+	mpz_t *Xi_pool;
+	mpz_t *Qxi_pool;
+	unsigned long Xi_Qxi_pool_cap;
 }qs_struct;
 
 #endif // STRUCTSQS_H

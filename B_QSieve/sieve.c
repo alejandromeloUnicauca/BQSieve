@@ -53,6 +53,8 @@ static unsigned int g_small_correction = 0;
 static packed_sieve_t *g_psieve       = NULL;
 static long            g_psieve_cap   = 0;
 static uint8_t        *g_sieve_block  = NULL;
+static long           *g_cand_buf     = NULL; /* pool de candidatos — sin malloc por llamada */
+static unsigned long   g_cand_cap     = 0;
 
 /* Acumuladores para diagnóstico del bottleneck del sieve */
 static double g_t_sieve_cutoff = 0;
@@ -427,22 +429,18 @@ void sieve_mpqs(qs_struct *qs_data, unsigned long xmax,
      */
     unsigned int cutoff;
     {
-        /* cutoff_config = 1.5 * error_bits, como en msieve para fb < 800 */
-        unsigned int error_bits = 0;
-        if (qs_data->large_prime_bound > 1) {
-            error_bits = (unsigned int)(log2((double)qs_data->large_prime_bound) + 0.5);
-        }
-        unsigned int cutoff_config = (unsigned int)(1.5 * error_bits);
-        
+        /* cutoff_config precomputado en main (= 1.5 * log2(LP_bound)) */
+        unsigned int cutoff_config = qs_data->sieve_cutoff_config;
+
         /* bits(|c|) donde c = (b² - N) / a */
-        mpz_t c_val, tmp;
-        mpz_inits(c_val, tmp, NULL);
+        mpz_t c_val;
+        mpz_init(c_val);
         mpz_mul(c_val, qs_data->poly.b, qs_data->poly.b);
         mpz_sub(c_val, c_val, qs_data->n);
         mpz_tdiv_q(c_val, c_val, qs_data->poly.a);
         mpz_abs(c_val, c_val);
         unsigned int c_bits = (unsigned int)mpz_sizeinbase(c_val, 2);
-        mpz_clears(c_val, tmp, NULL);
+        mpz_clear(c_val);
         
         if (c_bits >= cutoff_config)
             cutoff = c_bits - cutoff_config;
@@ -502,9 +500,14 @@ void sieve_mpqs(qs_struct *qs_data, unsigned long xmax,
     }
     uint8_t *sieve_block = g_sieve_block;
     
-    /* Buffer de candidatos */
+    /* Buffer de candidatos — pool persistente, sin malloc por llamada */
     unsigned long capacity = sieve_interval / 20 + 256;
-    long *indices = (long *)malloc(capacity * sizeof(long));
+    if (capacity > g_cand_cap) {
+        free(g_cand_buf);
+        g_cand_buf = (long *)malloc(capacity * sizeof(long));
+        g_cand_cap = capacity;
+    }
+    long *indices = g_cand_buf;
     unsigned long count = 0;
     
     /* Macro para detectar si algún byte de un uint64 tiene bit 7 set */

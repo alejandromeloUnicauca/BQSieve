@@ -7,9 +7,10 @@ int factoringBlocks(qs_struct * qs_data, unsigned long endPos, unsigned long pos
 
 /* Almacén en memoria de relaciones: reemplaza polinomio.txt. */
 typedef struct {
-    char *lhs;    /* cadena decimal de a*x+b                       */
-    char *qfile;  /* cadena decimal de Q(x) = lhs^2 - kN           */
-    char *rootas; /* rootas separadas por coma, o NULL si ninguna   */
+    mpz_t lhs_mpz;       /* a*x+b como mpz_t                          */
+    mpz_t qfile_mpz;     /* Q(x) = lhs^2 - kN como mpz_t             */
+    mpz_t roota_mpz[2];  /* rootas: [0] siempre válido, [1] solo 2LP */
+    int   n_roota;       /* número de rootas inicializadas (1 o 2)   */
 } rel_entry_t;
 
 typedef struct {

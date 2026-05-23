@@ -22,9 +22,10 @@ void relstore_init(void) {
 
 void relstore_free(void) {
     for (int i = 0; i < g_relstore.count; i++) {
-        free(g_relstore.entries[i].lhs);
-        free(g_relstore.entries[i].qfile);
-        free(g_relstore.entries[i].rootas);
+        mpz_clear(g_relstore.entries[i].lhs_mpz);
+        mpz_clear(g_relstore.entries[i].qfile_mpz);
+        for (int r = 0; r < g_relstore.entries[i].n_roota; r++)
+            mpz_clear(g_relstore.entries[i].roota_mpz[r]);
     }
     free(g_relstore.entries);
     g_relstore.entries = NULL;
@@ -34,7 +35,6 @@ void relstore_free(void) {
 
 relation_store_t *relstore_get(void) { return &g_relstore; }
 
-/* mpz_get_str(NULL, ...) asigna con malloc de GMP, compatible con free(). */
 static void relstore_add_full(mpz_t lhs, mpz_t qfile, mpz_t roota) {
     if (g_relstore.count == g_relstore.cap) {
         g_relstore.cap    *= 2;
@@ -42,9 +42,10 @@ static void relstore_add_full(mpz_t lhs, mpz_t qfile, mpz_t roota) {
                                      g_relstore.cap * sizeof(rel_entry_t));
     }
     rel_entry_t *e = &g_relstore.entries[g_relstore.count++];
-    e->lhs    = mpz_get_str(NULL, 10, lhs);
-    e->qfile  = mpz_get_str(NULL, 10, qfile);
-    e->rootas = mpz_get_str(NULL, 10, roota);
+    mpz_init_set(e->lhs_mpz,      lhs);
+    mpz_init_set(e->qfile_mpz,    qfile);
+    mpz_init_set(e->roota_mpz[0], roota);
+    e->n_roota = 1;
 }
 
 static void relstore_add_combined(mpz_t lhs, mpz_t qfile,
@@ -55,14 +56,11 @@ static void relstore_add_combined(mpz_t lhs, mpz_t qfile,
                                      g_relstore.cap * sizeof(rel_entry_t));
     }
     rel_entry_t *e = &g_relstore.entries[g_relstore.count++];
-    e->lhs   = mpz_get_str(NULL, 10, lhs);
-    e->qfile = mpz_get_str(NULL, 10, qfile);
-    char *s1 = mpz_get_str(NULL, 10, roota1);
-    char *s2 = mpz_get_str(NULL, 10, roota2);
-    size_t len = strlen(s1) + 1 + strlen(s2) + 1;
-    e->rootas = malloc(len);
-    snprintf(e->rootas, len, "%s,%s", s1, s2);
-    free(s1); free(s2);
+    mpz_init_set(e->lhs_mpz,      lhs);
+    mpz_init_set(e->qfile_mpz,    qfile);
+    mpz_init_set(e->roota_mpz[0], roota1);
+    mpz_init_set(e->roota_mpz[1], roota2);
+    e->n_roota = 2;
 }
 
 static double g_t_trialDiv_total = 0;
@@ -215,7 +213,8 @@ int blockDivisionV2(mpz_t Qxi, qs_struct *qs_data, mpz_t Xi)
     #pragma omp atomic update
     g_n_calls++;
 
-    int *exp_vec = (int *)calloc(qs_data->base.length, sizeof(int));
+    int *exp_vec = qs_data->exp_vec_pool;
+    memset(exp_vec, 0, (size_t)qs_data->base.length * sizeof(int));
     mpz_t QxiTemp, gcd;
     mpz_inits(QxiTemp, gcd, NULL);
     mpz_abs(QxiTemp, Qxi);
@@ -377,7 +376,11 @@ static void store_partial(qs_struct *qs_data, mpz_t Qxi, mpz_t Xi,
     partial_entry *e = &qs_data->partials.entries[idx];
     e->large_prime = lp1;
     e->large_prime2 = lp2; /* 0 para 1LP, != 0 para 2LP */
-    e->exponents = exp_vec; /* transferir ownership */
+    {
+        int *exp_copy = (int *)malloc((size_t)qs_data->base.length * sizeof(int));
+        memcpy(exp_copy, exp_vec, (size_t)qs_data->base.length * sizeof(int));
+        e->exponents = exp_copy;
+    }
     e->sign = sign;
     mpz_init(e->lhs);
     mpz_mul(e->lhs, qs_data->poly.a, Xi);
@@ -481,29 +484,20 @@ int try_combine_partial(qs_struct *qs_data, mpz_t Qxi, mpz_t Xi,
         partial_entry *pe = &qs_data->partials.entries[k];
 
         if (lp2 == 0) {
-            /* 1LP: buscar otra 1LP con el mismo primo grande */
             if (pe->large_prime2 == 0 && pe->large_prime == lp1) {
                 match_idx = (long)k;
                 shared_lp = lp1;
                 break;
             }
         } else {
-            /* 2LP: buscar otra parcial que comparta ambos LPs,
-             * o al menos uno de ellos.
-             * Prioridad 1: otra 2LP con los mismos dos LPs */
             if (pe->large_prime2 != 0) {
                 if ((pe->large_prime == lp1 && pe->large_prime2 == lp2) ||
                     (pe->large_prime == lp2 && pe->large_prime2 == lp1)) {
-                    /* Ambos LPs coinciden → full relation */
                     match_idx = (long)k;
-                    shared_lp = lp1; /* ambos se cancelan */
+                    shared_lp = lp1;
                     break;
                 }
             }
-            /* Prioridad 2: otra 1LP con lp1 o lp2 → NO usamos esto
-             * en la versión simple porque el resultado tendría un LP
-             * residual y necesitaría otra ronda de combinación.
-             * Lo dejamos para futuras mejoras. */
         }
     }
 
@@ -555,7 +549,7 @@ static int classify_smooth_or_partial(qs_struct *qs_data, mpz_t Qxi, mpz_t Xi,
         g_t_insert_matrix += omp_get_wtime() - _ti0;
         #pragma omp atomic update
         g_n_full++;
-        free(exp_vec);
+        if (exp_vec != qs_data->exp_vec_pool) free(exp_vec);
         mpz_clear(residual);
         return 1;
     }
@@ -578,7 +572,7 @@ static int classify_smooth_or_partial(qs_struct *qs_data, mpz_t Qxi, mpz_t Xi,
         #pragma omp atomic update
         g_t_combine += omp_get_wtime() - _tc0;
         mpz_clear(residual);
-        if (rc == 2) free(exp_vec);
+        if (rc == 2 && exp_vec != qs_data->exp_vec_pool) free(exp_vec);
         return rc;
     }
 
@@ -621,14 +615,14 @@ static int classify_smooth_or_partial(qs_struct *qs_data, mpz_t Qxi, mpz_t Xi,
                 qs_data->n_dlp_stored++;
                 if (rc == 2) qs_data->n_dlp_combined++;
                 mpz_clear(residual);
-                if (rc == 2) free(exp_vec);
+                if (rc == 2 && exp_vec != qs_data->exp_vec_pool) free(exp_vec);
                 return rc;
             }
         }
     }
 
     mpz_clear(residual);
-    free(exp_vec);
+    if (exp_vec != qs_data->exp_vec_pool) free(exp_vec);
     return 0;
 }
 
@@ -665,7 +659,8 @@ int trialDivisionRecip(mpz_t Qxi, qs_struct *qs_data, mpz_t Xi,
     g_n_calls++;
 
     _ta = omp_get_wtime();
-    int *exp_vec = (int *)calloc(qs_data->base.length, sizeof(int));
+    int *exp_vec = qs_data->exp_vec_pool;
+    memset(exp_vec, 0, (size_t)qs_data->base.length * sizeof(int));
     mpz_t res;
     mpz_init(res);
     mpz_abs(res, Qxi);
