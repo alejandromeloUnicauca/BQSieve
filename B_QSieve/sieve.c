@@ -18,6 +18,9 @@
 #include <omp.h>
 #include <time.h>
 #include <math.h>
+#ifdef __AVX2__
+#include <immintrin.h>
+#endif
 
 /* Tamaño del bloque de criba: 32KB cabe en L1 cache */
 #define SIEVE_BLOCK_SIZE 32768
@@ -543,20 +546,29 @@ void sieve_mpqs(qs_struct *qs_data, unsigned long xmax,
                     r1 += p;
                 }
                 psieve[i].nloc1 = r1 - SIEVE_BLOCK_SIZE;
+            } else if (p >= (SIEVE_BLOCK_SIZE / 2)) {
+                /* primo grande: cada raíz golpea ≤2 veces por bloque */
+                while (r1 < SIEVE_BLOCK_SIZE) { sieve_block[r1] -= logp; r1 += p; }
+                while (r2 < SIEVE_BLOCK_SIZE) { sieve_block[r2] -= logp; r2 += p; }
+                psieve[i].nloc1 = r1 - SIEVE_BLOCK_SIZE;
+                psieve[i].nloc2 = r2 - SIEVE_BLOCK_SIZE;
             } else {
-                /* dos raíces ordenadas: while fusionado, luego residual y swap */
-                while (r2 < SIEVE_BLOCK_SIZE) {
-                    sieve_block[r1] -= logp;
-                    sieve_block[r2] -= logp;
-                    r1 += p;
-                    r2 += p;
+                /* primo medio: dos raíces, unrolled ×2.
+                 * Re-sort r1 ≤ r2: el residual del bloque anterior puede romper
+                 * el invariante. La condición r2+p < BLOCK garantiza r1+p < BLOCK. */
+                if (r1 > r2) { uint32_t _t = r1; r1 = r2; r2 = _t; }
+                uint32_t p2 = p + p;
+                while (r2 + p < SIEVE_BLOCK_SIZE) {
+                    sieve_block[r1]     -= logp;
+                    sieve_block[r2]     -= logp;
+                    sieve_block[r1 + p] -= logp;
+                    sieve_block[r2 + p] -= logp;
+                    r1 += p2;
+                    r2 += p2;
                 }
-                if (r1 < SIEVE_BLOCK_SIZE) {
-                    uint32_t tmp = r2;
-                    sieve_block[r1] -= logp;
-                    r2 = r1 + p;
-                    r1 = tmp;
-                }
+                /* residual independiente por raíz (≤1 iter cada una) */
+                while (r1 < SIEVE_BLOCK_SIZE) { sieve_block[r1] -= logp; r1 += p; }
+                while (r2 < SIEVE_BLOCK_SIZE) { sieve_block[r2] -= logp; r2 += p; }
                 psieve[i].nloc1 = r1 - SIEVE_BLOCK_SIZE;
                 psieve[i].nloc2 = r2 - SIEVE_BLOCK_SIZE;
             }
@@ -565,43 +577,44 @@ void sieve_mpqs(qs_struct *qs_data, unsigned long xmax,
         double _tl1 = omp_get_wtime();
         g_t_sieve_loop += _tl1 - _tl0;
 
-        /* Escanear el bloque: buscar posiciones con bit 7 set
-         * (underflow = el valor original era >= cutoff y se restó bastante) */
-        uint64_t *packed = (uint64_t *)sieve_block;
-        unsigned long packed_len = block_len / 8;
-        
-        for (unsigned long qi = 0; qi < packed_len; qi++) {
-            if ((packed[qi] & PACKED_MASK) == 0)
-                continue;
-            /* Hay al menos un candidato en estos 8 bytes */
-            for (unsigned int jj = 0; jj < 8; jj++) {
-                if (sieve_block[qi * 8 + jj] & 0x80) {
-                    unsigned long pos = block_start + qi * 8 + jj;
-                    if (pos < sieve_interval) {
-                        long x = (long)pos - (long)xmax;
-                        if (count >= capacity) {
-                            capacity *= 2;
-                            indices = (long *)realloc(indices, capacity * sizeof(long));
-                        }
-                        indices[count++] = x;
-                    }
+        /* Escanear el bloque: buscar posiciones con bit 7 set.
+         * AVX2: _mm256_movemask_epi8 extrae MSB de 32 bytes → máscara de 32 bits,
+         *       __builtin_ctz localiza cada bit encendido en O(hits) en vez de O(32).
+         * pos < sieve_interval es siempre cierto dentro de [0, block_len). */
+#ifdef __AVX2__
+        {
+            unsigned long avx_steps = block_len / 32;
+            for (unsigned long qi = 0; qi < avx_steps; qi++) {
+                uint32_t mask = (uint32_t)_mm256_movemask_epi8(
+                    _mm256_loadu_si256((const __m256i *)(sieve_block + qi * 32)));
+                while (mask) {
+                    int bit = __builtin_ctz(mask);
+                    indices[count++] = (long)(block_start + qi * 32 + (unsigned)bit) - (long)xmax;
+                    mask &= mask - 1;
                 }
             }
-        }
-        /* Bytes restantes (si block_len no es múltiplo de 8) */
-        for (unsigned long qi = packed_len * 8; qi < block_len; qi++) {
-            if (sieve_block[qi] & 0x80) {
-                unsigned long pos = block_start + qi;
-                if (pos < sieve_interval) {
-                    long x = (long)pos - (long)xmax;
-                    if (count >= capacity) {
-                        capacity *= 2;
-                        indices = (long *)realloc(indices, capacity * sizeof(long));
-                    }
-                    indices[count++] = x;
-                }
+            for (unsigned long qi = avx_steps * 32; qi < block_len; qi++) {
+                if (sieve_block[qi] & 0x80)
+                    indices[count++] = (long)(block_start + qi) - (long)xmax;
             }
         }
+#else
+        {
+            uint64_t *packed = (uint64_t *)sieve_block;
+            unsigned long packed_len = block_len / 8;
+            for (unsigned long qi = 0; qi < packed_len; qi++) {
+                if ((packed[qi] & PACKED_MASK) == 0) continue;
+                for (unsigned int jj = 0; jj < 8; jj++) {
+                    if (sieve_block[qi * 8 + jj] & 0x80)
+                        indices[count++] = (long)(block_start + qi * 8 + jj) - (long)xmax;
+                }
+            }
+            for (unsigned long qi = packed_len * 8; qi < block_len; qi++) {
+                if (sieve_block[qi] & 0x80)
+                    indices[count++] = (long)(block_start + qi) - (long)xmax;
+            }
+        }
+#endif
         g_t_sieve_scan += omp_get_wtime() - _tl1;
     }
 

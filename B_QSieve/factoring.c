@@ -461,6 +461,50 @@ static int combine_two_partials(qs_struct *qs_data,
 }
 
 /*--------------------------------------------------------------------
+ * Helpers para hash table 1LP (open-addressing, tombstones)
+ * key=0 → vacío   key=ULONG_MAX → tombstone   otro → primo válido
+ *--------------------------------------------------------------------*/
+#define LP1_HASH_TOMB ((unsigned long)(-1))
+
+static long lp1_hash_find(qs_struct *qs, unsigned long lp)
+{
+    unsigned long h = (lp * 2654435761UL) & qs->lp1_hash_mask;
+    while (qs->lp1_hash_keys[h]) {
+        if (qs->lp1_hash_keys[h] == lp)
+            return (long)qs->lp1_hash_idxs[h];
+        h = (h + 1) & qs->lp1_hash_mask;
+    }
+    return -1;
+}
+
+static void lp1_hash_insert(qs_struct *qs, unsigned long lp, unsigned long idx)
+{
+    unsigned long h = (lp * 2654435761UL) & qs->lp1_hash_mask;
+    while (qs->lp1_hash_keys[h] && qs->lp1_hash_keys[h] != LP1_HASH_TOMB)
+        h = (h + 1) & qs->lp1_hash_mask;
+    qs->lp1_hash_keys[h] = lp;
+    qs->lp1_hash_idxs[h] = idx;
+}
+
+static void lp1_hash_delete(qs_struct *qs, unsigned long lp)
+{
+    unsigned long h = (lp * 2654435761UL) & qs->lp1_hash_mask;
+    while (qs->lp1_hash_keys[h]) {
+        if (qs->lp1_hash_keys[h] == lp) { qs->lp1_hash_keys[h] = LP1_HASH_TOMB; return; }
+        h = (h + 1) & qs->lp1_hash_mask;
+    }
+}
+
+static void lp1_hash_update_idx(qs_struct *qs, unsigned long lp, unsigned long new_idx)
+{
+    unsigned long h = (lp * 2654435761UL) & qs->lp1_hash_mask;
+    while (qs->lp1_hash_keys[h]) {
+        if (qs->lp1_hash_keys[h] == lp) { qs->lp1_hash_idxs[h] = new_idx; return; }
+        h = (h + 1) & qs->lp1_hash_mask;
+    }
+}
+
+/*--------------------------------------------------------------------
  * try_combine_partial — Buscar match para una parcial y combinar.
  *
  * Para 1LP (lp2==0): buscar otra parcial con el mismo LP.
@@ -476,27 +520,23 @@ int try_combine_partial(qs_struct *qs_data, mpz_t Qxi, mpz_t Xi,
                         int *exp_vec, int sign,
                         unsigned long lp1, unsigned long lp2)
 {
-    /* Buscar match en la tabla de parciales */
     long match_idx = -1;
     unsigned long shared_lp = 0;
 
-    for (unsigned long k = 0; k < qs_data->partials.n; k++) {
-        partial_entry *pe = &qs_data->partials.entries[k];
-
-        if (lp2 == 0) {
-            if (pe->large_prime2 == 0 && pe->large_prime == lp1) {
+    if (lp2 == 0) {
+        /* 1LP: lookup O(1) en hash table */
+        match_idx = lp1_hash_find(qs_data, lp1);
+        if (match_idx >= 0) shared_lp = lp1;
+    } else {
+        /* 2LP: búsqueda lineal (poco frecuente) */
+        for (unsigned long k = 0; k < qs_data->partials.n; k++) {
+            partial_entry *pe = &qs_data->partials.entries[k];
+            if (pe->large_prime2 != 0 &&
+                ((pe->large_prime == lp1 && pe->large_prime2 == lp2) ||
+                 (pe->large_prime == lp2 && pe->large_prime2 == lp1))) {
                 match_idx = (long)k;
                 shared_lp = lp1;
                 break;
-            }
-        } else {
-            if (pe->large_prime2 != 0) {
-                if ((pe->large_prime == lp1 && pe->large_prime2 == lp2) ||
-                    (pe->large_prime == lp2 && pe->large_prime2 == lp1)) {
-                    match_idx = (long)k;
-                    shared_lp = lp1;
-                    break;
-                }
             }
         }
     }
@@ -509,19 +549,30 @@ int try_combine_partial(qs_struct *qs_data, mpz_t Qxi, mpz_t Xi,
                                        match, shared_lp,
                                        remaining_lps, &n_remaining);
 
-        /* Eliminar la parcial usada (swap con última) */
+        /* Eliminar la parcial usada del hash y del array (swap con última) */
+        if (lp2 == 0)
+            lp1_hash_delete(qs_data, lp1);
         free(match->exponents);
         mpz_clears(match->lhs, match->Qx, match->roota, match->a_value, NULL);
         unsigned long last = qs_data->partials.n - 1;
-        if ((unsigned long)match_idx != last)
+        if ((unsigned long)match_idx != last) {
             qs_data->partials.entries[match_idx] = qs_data->partials.entries[last];
+            /* la entrada movida de last→match_idx: actualizar su slot en el hash */
+            if (qs_data->partials.entries[match_idx].large_prime2 == 0)
+                lp1_hash_update_idx(qs_data,
+                                    qs_data->partials.entries[match_idx].large_prime,
+                                    (unsigned long)match_idx);
+        }
         qs_data->partials.n--;
 
         (void)rc;
-        return 2; /* combined partial = full relation */
+        return 2;
     } else {
-        /* No hay match: guardar esta parcial */
+        /* No hay match: guardar la parcial e insertar en el hash */
+        unsigned long new_idx = qs_data->partials.n;
         store_partial(qs_data, Qxi, Xi, exp_vec, sign, lp1, lp2);
+        if (lp2 == 0)
+            lp1_hash_insert(qs_data, lp1, new_idx);
         return 0;
     }
 }

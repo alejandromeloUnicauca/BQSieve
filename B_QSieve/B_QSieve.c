@@ -309,6 +309,10 @@ int main(int argc, char **argv)
 	qs_data.Xi_pool = NULL;
 	qs_data.Qxi_pool = NULL;
 	qs_data.Xi_Qxi_pool_cap = 0;
+	qs_data.lp1_hash_keys = NULL;
+	qs_data.lp1_hash_idxs = NULL;
+	qs_data.lp1_hash_size = 0;
+	qs_data.lp1_hash_mask = 0;
 	qs_data.n_dlp_stored = 0;
 	qs_data.n_dlp_combined = 0;
 	qs_data.multiplier = 1;
@@ -407,6 +411,16 @@ int main(int argc, char **argv)
 	// Pool reutilizable para exp_vec — un solo alloc por factorización
 	qs_data.exp_vec_pool = (int *)malloc((size_t)qs_data.base.length * sizeof(int));
 
+	// Hash table para lookup O(1) de parciales 1LP — potencia de 2, factor 8×base
+	{
+		unsigned long ht = 4096;
+		unsigned long target = (unsigned long)qs_data.base.length * 8;
+		while (ht < target) ht <<= 1;
+		qs_data.lp1_hash_size = ht;
+		qs_data.lp1_hash_mask = ht - 1;
+		qs_data.lp1_hash_keys = (unsigned long *)calloc(ht, sizeof(unsigned long));
+		qs_data.lp1_hash_idxs = (unsigned long *)calloc(ht, sizeof(unsigned long));
+	}
 
 	//Intervalo de criba: sieve_size de la tabla msieve × SIEVE_MULT (flag -s)
 	mpz_set_ui(qs_data.intervalo.length,
@@ -758,6 +772,10 @@ void freeStruct(qs_struct * qs_data){
 	free(qs_data->base.sp);
 	free(qs_data->exp_vec_pool);
 	qs_data->exp_vec_pool = NULL;
+	free(qs_data->lp1_hash_keys);
+	free(qs_data->lp1_hash_idxs);
+	qs_data->lp1_hash_keys = NULL;
+	qs_data->lp1_hash_idxs = NULL;
 
 	// OPT-3: liberar pool Xi/Qxi
 	if (qs_data->Xi_pool) {

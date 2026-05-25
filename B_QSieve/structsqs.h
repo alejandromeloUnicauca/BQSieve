@@ -195,6 +195,12 @@ typedef struct{
 	mpz_t *Xi_pool;
 	mpz_t *Qxi_pool;
 	unsigned long Xi_Qxi_pool_cap;
+	/** hash table O(1) para lookup de parciales 1LP por large prime
+	 *  open-addressing con tombstones; keys=0 vacío, ULONG_MAX tombstone */
+	unsigned long *lp1_hash_keys;
+	unsigned long *lp1_hash_idxs;  /* índice en partials.entries[] */
+	unsigned long  lp1_hash_size;  /* potencia de 2 */
+	unsigned long  lp1_hash_mask;  /* lp1_hash_size - 1 */
 }qs_struct;
 
 #endif // STRUCTSQS_H

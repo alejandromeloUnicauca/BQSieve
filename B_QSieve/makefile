@@ -3,7 +3,7 @@
 CC=gcc
 # -MMD -MP: gcc genera archivos .d con las dependencias de headers de cada .o,
 # de modo que editar un .h recompila todos los .c que lo incluyen.
-CFLAGS= -O2 -fopenmp -std=c11 -Wall -MMD -MP
+CFLAGS= -O2 -mavx2 -fopenmp -std=c11 -Wall -MMD -MP
 LDFLAGS = -lmpfr -lgmp -lm
 
 # Lista de archivos fuente
