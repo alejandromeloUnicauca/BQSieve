@@ -578,6 +578,77 @@ int try_combine_partial(qs_struct *qs_data, mpz_t Qxi, mpz_t Xi,
 }
 
 /*--------------------------------------------------------------------
+ * rel_seen_check_insert — filtro de relaciones duplicadas.
+ *
+ * Una relación queda determinada por |v| con v = a·x + b, ya que
+ * v² − kN = Qfile. Polinomios SIQS distintos pueden alcanzar el mismo |v|
+ * (muy frecuente en N pequeños, donde |v| ≪ sqrt(kN)). Sin este filtro,
+ * una parcial se combina con su propio duplicado (fila nula) o una full se
+ * repite, y Block Lanczos devuelve dependencias triviales X² ≡ X² → GCD
+ * siempre 1 o N.
+ *
+ * Se guarda una huella de 64 bits de |v|; una colisión de huella solo
+ * descarta una relación válida (inofensivo). Solo se insertan candidatos
+ * que llegan a usarse (full o parcial): un duplicado se clasifica igual
+ * que el original, así que los descartados no necesitan registrarse.
+ *--------------------------------------------------------------------*/
+static inline uint64_t mix64(uint64_t z)
+{
+    z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ULL;
+    z = (z ^ (z >> 27)) * 0x94d049bb133111ebULL;
+    return z ^ (z >> 31);
+}
+
+/* Huella de |a·x+b|; devuelve 1 si ya está en el set. */
+static int rel_seen_lookup(qs_struct *qs, mpz_t Xi, uint64_t *key_out)
+{
+    mpz_t v;
+    mpz_init(v);
+    mpz_mul(v, qs->poly.a, Xi);
+    mpz_add(v, v, qs->poly.b);
+    uint64_t key = 0;
+    size_t nl = mpz_size(v);  /* limbs de |v|: el signo no interviene */
+    for (size_t i = 0; i < nl; i++)
+        key = mix64(key ^ (uint64_t)mpz_getlimbn(v, (mp_size_t)i));
+    mpz_clear(v);
+    if (key == 0) key = 1;  /* 0 marca slot vacío */
+    *key_out = key;
+
+    unsigned long mask = qs->rel_seen_size - 1;
+    unsigned long h = (unsigned long)key & mask;
+    while (qs->rel_seen_keys[h]) {
+        if (qs->rel_seen_keys[h] == key) return 1;
+        h = (h + 1) & mask;
+    }
+    return 0;
+}
+
+static void rel_seen_insert(qs_struct *qs, uint64_t key)
+{
+    unsigned long mask = qs->rel_seen_size - 1;
+    unsigned long h = (unsigned long)key & mask;
+    while (qs->rel_seen_keys[h]) h = (h + 1) & mask;
+    qs->rel_seen_keys[h] = key;
+    qs->rel_seen_count++;
+
+    /* Rehash al superar 50% de ocupación */
+    if (qs->rel_seen_count * 2 > qs->rel_seen_size) {
+        unsigned long new_size = qs->rel_seen_size * 2, new_mask = new_size - 1;
+        uint64_t *nk = (uint64_t *)calloc(new_size, sizeof(uint64_t));
+        for (unsigned long i = 0; i < qs->rel_seen_size; i++) {
+            uint64_t k = qs->rel_seen_keys[i];
+            if (!k) continue;
+            unsigned long j = (unsigned long)k & new_mask;
+            while (nk[j]) j = (j + 1) & new_mask;
+            nk[j] = k;
+        }
+        free(qs->rel_seen_keys);
+        qs->rel_seen_keys = nk;
+        qs->rel_seen_size = new_size;
+    }
+}
+
+/*--------------------------------------------------------------------
  * classify_smooth_or_partial — decide qué hacer con un candidato cuyo
  * Qxi ya fue reducido a `residual` por la base.
  *
@@ -590,7 +661,16 @@ int try_combine_partial(qs_struct *qs_data, mpz_t Qxi, mpz_t Xi,
 static int classify_smooth_or_partial(qs_struct *qs_data, mpz_t Qxi, mpz_t Xi,
                                        int *exp_vec, int sign, mpz_t residual)
 {
+    uint64_t rel_key;
+    if (rel_seen_lookup(qs_data, Xi, &rel_key)) {
+        qs_data->n_dup_rels++;
+        mpz_clear(residual);
+        if (exp_vec != qs_data->exp_vec_pool) free(exp_vec);
+        return 0;
+    }
+
     if (mpz_cmp_ui(residual, 1) == 0) {
+        rel_seen_insert(qs_data, rel_key);
         double _ti0 = omp_get_wtime();
         if (sign) insertarNumero(&qs_data->mat, qs_data->n_BSuaves, 0, 1);
         for (long i = 0; i < qs_data->base.length; i++)
@@ -618,6 +698,7 @@ static int classify_smooth_or_partial(qs_struct *qs_data, mpz_t Qxi, mpz_t Xi,
     if (is_prime_1lp) {
         #pragma omp atomic update
         g_n_1lp_try++;
+        rel_seen_insert(qs_data, rel_key);
         double _tc0 = omp_get_wtime();
         int rc = try_combine_partial(qs_data, Qxi, Xi, exp_vec, sign, lp1, 0);
         #pragma omp atomic update
@@ -659,6 +740,7 @@ static int classify_smooth_or_partial(qs_struct *qs_data, mpz_t Qxi, mpz_t Xi,
                 f1 < qs_data->large_prime_bound &&
                 f2 < qs_data->large_prime_bound) {
                 if (f1 > f2) { unsigned long tmp = f1; f1 = f2; f2 = tmp; }
+                rel_seen_insert(qs_data, rel_key);
                 double _tc0 = omp_get_wtime();
                 int rc = try_combine_partial(qs_data, Qxi, Xi, exp_vec, sign, f1, f2);
                 #pragma omp atomic update

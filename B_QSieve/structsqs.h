@@ -201,6 +201,15 @@ typedef struct{
 	unsigned long *lp1_hash_idxs;  /* índice en partials.entries[] */
 	unsigned long  lp1_hash_size;  /* potencia de 2 */
 	unsigned long  lp1_hash_mask;  /* lp1_hash_size - 1 */
+	/** hash set de huellas de |a·x+b| ya vistos: polinomios distintos pueden
+	 *  producir el mismo valor (misma relación). Un duplicado genera una fila
+	 *  repetida (o una parcial combinada consigo misma → fila nula) y por tanto
+	 *  dependencias triviales X² ≡ X² que nunca factorizan N.
+	 *  open-addressing, key=0 vacío, crece al 50% de ocupación */
+	uint64_t      *rel_seen_keys;
+	unsigned long  rel_seen_size;  /* potencia de 2 */
+	unsigned long  rel_seen_count;
+	unsigned long  n_dup_rels;     /* candidatos descartados por duplicados */
 }qs_struct;
 
 #endif // STRUCTSQS_H

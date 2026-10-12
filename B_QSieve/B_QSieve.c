@@ -313,6 +313,10 @@ int main(int argc, char **argv)
 	qs_data.lp1_hash_idxs = NULL;
 	qs_data.lp1_hash_size = 0;
 	qs_data.lp1_hash_mask = 0;
+	qs_data.rel_seen_keys = NULL;
+	qs_data.rel_seen_size = 0;
+	qs_data.rel_seen_count = 0;
+	qs_data.n_dup_rels = 0;
 	qs_data.n_dlp_stored = 0;
 	qs_data.n_dlp_combined = 0;
 	qs_data.multiplier = 1;
@@ -420,6 +424,9 @@ int main(int argc, char **argv)
 		qs_data.lp1_hash_mask = ht - 1;
 		qs_data.lp1_hash_keys = (unsigned long *)calloc(ht, sizeof(unsigned long));
 		qs_data.lp1_hash_idxs = (unsigned long *)calloc(ht, sizeof(unsigned long));
+		// Hash set anti-duplicados de |a·x+b| — mismo tamaño inicial, crece solo
+		qs_data.rel_seen_size = ht;
+		qs_data.rel_seen_keys = (uint64_t *)calloc(ht, sizeof(uint64_t));
 	}
 
 	//Intervalo de criba: sieve_size de la tabla msieve × SIEVE_MULT (flag -s)
@@ -510,6 +517,7 @@ int main(int argc, char **argv)
 
 	double t_gen = 0, t_sieve = 0, t_evalQ = 0, t_factor = 0;
 	long n_cand_total = 0;
+	double t_last_report = omp_get_wtime(); /* para verbose periódico */
 
 	while(res==1){
 		double _t0, _t1;
@@ -563,16 +571,19 @@ int main(int argc, char **argv)
 		t_factor += _t1 - _t0;
 
 		long found_this = qs_data.n_BSuaves - prev_n_BSuaves;
-		if (found_this > 0) {
-			/* Clasificar: full vs combined */
-			full_relations += found_this; /* ajustado abajo */
-			if(VERBOSE) {
-				printf("Polinomio %ld: %lu candidatos criba → %ld B_suaves (total: %ld, parciales: %lu)\n",
-					polinomio_count, npos, found_this, qs_data.n_BSuaves, qs_data.partials.n);
+		if (found_this > 0)
+			full_relations += found_this;
+		prev_n_BSuaves = qs_data.n_BSuaves;
+
+		if (VERBOSE) {
+			double _tnow = omp_get_wtime();
+			if (_tnow - t_last_report >= 2.0) {
+				printf("  [poly %ld] full=%ld  parciales=%lu  candidatos=%ld\n",
+					polinomio_count, qs_data.n_BSuaves, qs_data.partials.n, n_cand_total);
 				fflush(stdout);
+				t_last_report = _tnow;
 			}
 		}
-		prev_n_BSuaves = qs_data.n_BSuaves;
 	}
 	// OPT-3: Xi/Qxi apuntan al pool, no al heap propio — limpiar para evitar double-free
 	qs_data.intervalo.Xi  = NULL;
@@ -581,6 +592,7 @@ int main(int argc, char **argv)
 	if(VERBOSE) fflush(stdout);
 	if(VERBOSE) printf("Numeros B_Suaves encontrados:%ld\n",qs_data.n_BSuaves);
 	if(VERBOSE) printf("Parciales almacenadas sin emparejar: %lu\n", qs_data.partials.n);
+	if(VERBOSE) printf("Relaciones duplicadas descartadas: %lu\n", qs_data.n_dup_rels);
 	if (VERBOSE && qs_data.large_prime_bound2 > 0) {
 		printf("2LP: almacenadas=%lu, combinadas=%lu\n",
 			qs_data.n_dlp_stored, qs_data.n_dlp_combined);
@@ -776,6 +788,8 @@ void freeStruct(qs_struct * qs_data){
 	free(qs_data->lp1_hash_idxs);
 	qs_data->lp1_hash_keys = NULL;
 	qs_data->lp1_hash_idxs = NULL;
+	free(qs_data->rel_seen_keys);
+	qs_data->rel_seen_keys = NULL;
 
 	// OPT-3: liberar pool Xi/Qxi
 	if (qs_data->Xi_pool) {
